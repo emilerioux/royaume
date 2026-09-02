@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>La Quête du Chevalier</title>
+  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="theme-color" content="#1b1410">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="La Quête">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+  <div id="game">
+    <canvas id="c"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" hidden>
+      <div id="hearts"></div>
+      <div id="gold"><span class="coin">◆</span><span id="gold-n">0</span></div>
+      <div id="tracker" hidden></div>
+      <button id="menu-btn" aria-label="Journal">☰</button>
+    </div>
+
+    <!-- Contrôles tactiles -->
+    <div id="pad" hidden>
+      <div id="stick"><div id="knob"></div></div>
+      <div id="abtns">
+        <button id="btn-b" aria-label="Parler / fouiller">✋</button>
+        <button id="btn-a" aria-label="Frapper">⚔️</button>
+      </div>
+    </div>
+
+    <div id="toasts"></div>
+
+    <!-- Dialogue -->
+    <div id="dialogue" hidden>
+      <div id="dlg-name"></div>
+      <div id="dlg-text"></div>
+      <div id="dlg-hint">▼</div>
+    </div>
+
+    <!-- Écran-titre -->
+    <div id="title" class="screen">
+      <div class="crest">⚔️</div>
+      <h1>La Quête<br>du Chevalier</h1>
+      <p class="sub">Petit RPG médiéval — jouable hors ligne</p>
+      <button id="btn-continue" class="big" hidden>Continuer</button>
+      <button id="btn-new" class="big">Nouvelle partie</button>
+      <p class="tiny">Joystick : marcher · ⚔️ : frapper · ✋ : parler / fouiller</p>
+    </div>
+
+    <!-- Journal -->
+    <div id="menu" class="screen" hidden>
+      <h2>Journal</h2>
+      <div class="scroll">
+        <h3>Quêtes</h3>
+        <div id="menu-quests"></div>
+        <h3>Sac</h3>
+        <div id="menu-bag"></div>
+      </div>
+      <button id="btn-resume" class="big">Reprendre</button>
+      <button id="btn-quit" class="small">Abandonner (retour au titre)</button>
+    </div>
+
+    <!-- Échoppe -->
+    <div id="shop" class="screen" hidden>
+      <h2>Échoppe du village</h2>
+      <div id="shop-gold" class="shopgold"></div>
+      <div id="shop-items"></div>
+      <button id="btn-shop-close" class="big">Quitter l'échoppe</button>
+    </div>
+
+    <!-- Game over -->
+    <div id="over" class="screen" hidden>
+      <h2>Tu es tombé…</h2>
+      <p id="over-sub" class="sub"></p>
+      <button id="btn-revive" class="big">Se relever au village</button>
+    </div>
+  </div>
+
+  <script src="game.js?v=2"></script>
+</body>
+</html>
