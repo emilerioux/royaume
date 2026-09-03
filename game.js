@@ -1217,27 +1217,70 @@
     orb(x - 5, yy - 6 - shR, 2.4, COL.steelLit, COL.steel, COL.steelDark);
     orb(x + 5, yy - 6 + shR, 2.4, COL.steelLit, COL.steel, COL.steelDark);
 
-    // ---- tête + heaume (contre-balancement léger)
+    // ---- tête : visage lisible selon la direction du regard
     const hx = x - swing * 0.6;
-    orb(hx, yy - 10, 3, "#f0cda0", COL.skin, "#a97e52");
-    orb(hx, yy - 12, 3.4, COL.steelLit, COL.steel, COL.steelDark);
-    ctx.strokeStyle = "rgba(40,44,50,.7)"; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(hx, yy - 15); ctx.lineTo(hx, yy - 9); ctx.stroke();
+    const hy = yy - 10.5;
+    const HR = 3.7;
 
-    // ---- panache qui suit
-    const plx = hx + 1 - backX * g * 2 + Math.sin(time * 0.2 + wc) * (0.7 + g * 1.5) + swing * 1.2;
-    ctx.fillStyle = lgV(hx, yy - 18, yy - 12, "#c85742", "#7c2f26");
+    // panache, derrière la tête, penché à l'opposé du regard
+    const plLean = d === "left" ? 1.6 : d === "right" ? -1.6 : 0;
+    const plx = hx + 1 - backX * g * 2 + Math.sin(time * 0.2 + wc) * (0.7 + g * 1.4) + swing * 1.1 + plLean;
+    ctx.fillStyle = lgV(hx, hy - 8, hy - 1, "#c85742", "#7c2f26");
     ctx.beginPath();
-    ctx.moveTo(hx - 1, yy - 15);
-    ctx.quadraticCurveTo(plx + 4, yy - 20, plx, yy - 10);
-    ctx.quadraticCurveTo(hx + 1, yy - 13, hx - 1, yy - 15);
+    ctx.moveTo(hx - 1.4, hy - 3.4);
+    ctx.quadraticCurveTo(plx + 4, hy - 9, plx, hy + 0.5);
+    ctx.quadraticCurveTo(hx + 1.3, hy - 1.8, hx - 1.4, hy - 3.4);
     ctx.fill();
 
-    // ---- yeux
-    ctx.fillStyle = "#20140c";
-    if (d === "down") { ctx.fillRect(hx - 2, yy - 10, 1, 1.5); ctx.fillRect(hx + 1, yy - 10, 1, 1.5); }
-    else if (d === "left") ctx.fillRect(hx - 2.5, yy - 10, 1, 1.5);
-    else if (d === "right") ctx.fillRect(hx + 1.5, yy - 10, 1, 1.5);
+    if (d === "up") {
+      // dos du heaume : acier plein, gorgerin, aucun visage
+      orb(hx, hy - 0.2, HR + 0.2, COL.steelLit, COL.steel, COL.steelDark);
+      ctx.strokeStyle = "rgba(40,44,50,.55)"; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(hx - HR + 0.4, hy - 0.6); ctx.quadraticCurveTo(hx, hy + 0.8, hx + HR - 0.4, hy - 0.6); ctx.stroke();
+      ctx.fillStyle = COL.steelLit;
+      ctx.beginPath(); ctx.arc(hx - 1.7, hy - 1.7, 0.5, 0, 7); ctx.arc(hx + 1.7, hy - 1.7, 0.5, 0, 7); ctx.fill();
+      ctx.fillStyle = "#5a5f66";
+      ctx.beginPath(); ctx.ellipse(hx, hy + HR - 0.6, HR - 0.6, 1.7, 0, 0, Math.PI); ctx.fill();
+    } else {
+      const s2 = d === "left" ? -1 : d === "right" ? 1 : 0;
+      // visage (peau)
+      orb(hx, hy, HR, "#f5d3a7", COL.skin, "#a97e52");
+      // nez qui dépasse (profil)
+      if (s2) {
+        ctx.fillStyle = "#eabd8b";
+        ctx.beginPath();
+        ctx.moveTo(hx + s2 * (HR - 1), hy - 0.2);
+        ctx.lineTo(hx + s2 * (HR + 1.3), hy + 0.9);
+        ctx.lineTo(hx + s2 * (HR - 1), hy + 2);
+        ctx.closePath(); ctx.fill();
+      }
+      // calotte du heaume (haut de la tête seulement -> le visage reste dégagé)
+      ctx.fillStyle = lgV(hx, hy - HR, hy, COL.steelLit, COL.steel, COL.steelDark);
+      ctx.beginPath();
+      ctx.arc(hx, hy, HR, Math.PI, 0);
+      ctx.lineTo(hx + HR, hy - 0.4);
+      ctx.lineTo(hx - HR, hy - 0.4);
+      ctx.closePath(); ctx.fill();
+      if (s2) orb(hx - s2 * 1.8, hy + 0.2, HR * 0.78, COL.steelLit, COL.steel, COL.steelDark); // arrière du crâne
+      else { ctx.fillStyle = COL.steel; ctx.fillRect(hx - 0.7, hy - 0.5, 1.4, 2.7); } // protège-nez
+      // ombre du rebord sur le front
+      ctx.fillStyle = "rgba(48,32,16,.3)";
+      ctx.fillRect(hx - HR + 0.5, hy - 0.5, HR * 2 - 1, 0.9);
+      // yeux
+      ctx.fillStyle = "#20140c";
+      if (s2) ctx.fillRect(hx + s2 * 1.15 - 0.6, hy + 0.15, 1.2, 1.6);
+      else { ctx.fillRect(hx - 2.1, hy + 0.25, 1.2, 1.6); ctx.fillRect(hx + 0.9, hy + 0.25, 1.2, 1.6); }
+      // reflets
+      ctx.fillStyle = "rgba(255,255,255,.6)";
+      if (s2) ctx.fillRect(hx + s2 * 1.15 - 0.5, hy + 0.3, 0.45, 0.45);
+      else { ctx.fillRect(hx - 2, hy + 0.4, 0.5, 0.5); ctx.fillRect(hx + 1, hy + 0.4, 0.5, 0.5); }
+      // bouche
+      ctx.strokeStyle = "rgba(95,55,38,.45)"; ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      if (s2) { ctx.moveTo(hx + s2 * 0.5, hy + 2.6); ctx.lineTo(hx + s2 * 2, hy + 2.2); }
+      else { ctx.moveTo(hx - 1, hy + 2.9); ctx.lineTo(hx + 1, hy + 2.9); }
+      ctx.stroke();
+    }
 
     // ---- rim light
     ctx.strokeStyle = "rgba(255,224,165,.5)"; ctx.lineWidth = 1;
