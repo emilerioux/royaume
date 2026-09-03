@@ -248,6 +248,7 @@
 
   const input = { mx: 0, my: 0, attack: false, interact: false };
   let atkHeld = false; // bouton ⚔️ maintenu -> attaques enchaînées
+  let hurtFx = 0;      // minuteur du flash rouge quand on encaisse
   let leftHanded = false;
   try { leftHanded = localStorage.getItem("quete-lefty") === "1"; } catch (e) {}
 
@@ -864,6 +865,7 @@
   // ---------------------------------------------------------------- boucle : update
   function update(dt) {
     time += dt;
+    if (hurtFx > 0) hurtFx -= dt;
     if (state !== "play") { input.attack = input.interact = false; atkHeld = false; return; }
     keyboardMove();
 
@@ -970,11 +972,18 @@
       }
       // contact avec le joueur (pas juste après avoir encaissé un coup)
       if (!e.dead && e.flash <= 0 && player.iframe <= 0 && dist < e.r + 5) {
+        const before = player.hp;
         player.hp -= e.dmg;
-        player.iframe = 85;
+        player.iframe = 50;              // invincibilité raccourcie (était 85 ≈ 1,4 s -> ~0,8 s)
+        hurtFx = 20;                     // flash rouge sur les bords
         const k = dist || 1;
-        player.kb.x = (-dx / k) * 3.2; player.kb.y = (-dy / k) * 3.2;
+        player.kb.x = (-dx / k) * 1.8; player.kb.y = (-dy / k) * 1.8;  // recul réduit
         updateHud();
+        // les cœurs qui viennent de se vider tressautent
+        for (let c = Math.max(0, player.hp); c < before; c++) {
+          const hh = heartsEl.children[c];
+          if (hh) { hh.classList.remove("hit"); void hh.offsetWidth; hh.classList.add("hit"); }
+        }
         if (player.hp <= 0) { player.hp = 0; updateHud(); gameOver(); return; }
       }
     }
@@ -1180,7 +1189,9 @@
   let lastStepSign = 0;
 
   function drawKnight() {
-    if (player.iframe > 0 && (player.iframe >> 2) & 1) return;
+    // éclair rouge quand on encaisse : 2 pulses, le chevalier reste visible
+    const ifr = player.iframe;
+    const hurtTint = (ifr > 44 || (ifr <= 39 && ifr > 34));
 
     const d = player.dir;
     const g = player.gait;                                  // 0..1 (marche enclenchée)
@@ -1373,6 +1384,14 @@
       roundRectP(-1, -3, 2, 9, 1); ctx.fill();
       ctx.fillStyle = "#b98f45"; roundRectP(-1.6, -3.6, 3.2, 1.8, 0.8); ctx.fill();
       ctx.restore();
+    }
+
+    // ---- éclair rouge d'encaissement (par-dessus, translucide -> le perso reste visible)
+    if (hurtTint) {
+      ctx.fillStyle = "rgba(255,64,50,0.5)";
+      roundRectP(x - 6, yy - 8, 12, 17, 5); ctx.fill();
+      ctx.beginPath(); ctx.arc(hx, hy - 0.5, HR + 1, 0, 7); ctx.fill();
+      ctx.fillRect(x - 5, y + 2, 4, 8); ctx.fillRect(x + 1, y + 2, 4, 8);
     }
 
     ctx.restore(); // roulis
@@ -1621,6 +1640,13 @@
     const vg = ctx.createRadialGradient(VIEW_W / 2, VIEW_H * 0.46, VIEW_H * 0.34, VIEW_W / 2, VIEW_H * 0.55, VIEW_H * 0.98);
     vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(12,10,7," + Z.vig + ")");
     ctx.fillStyle = vg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    // flash rouge sur les bords quand on encaisse
+    if (hurtFx > 0) {
+      const a = Math.min(1, hurtFx / 20) * 0.62;
+      const rg = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.16, VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.7);
+      rg.addColorStop(0, "rgba(205,25,25,0)"); rg.addColorStop(0.7, "rgba(205,25,25," + a * 0.35 + ")"); rg.addColorStop(1, "rgba(200,15,15," + a + ")");
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
     ctx.save(); ctx.globalAlpha = 0.045; ctx.globalCompositeOperation = "overlay";
     for (let gy = 0; gy < VIEW_H; gy += 96) for (let gx = 0; gx < VIEW_W; gx += 96) ctx.drawImage(grainCv, gx, gy);
     ctx.restore();
