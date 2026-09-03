@@ -813,10 +813,11 @@
     } else player.anim = 0;
     // recul
     if (Math.abs(player.kb.x) > 0.1 || Math.abs(player.kb.y) > 0.1) {
-      moveEntity(player, player.kb.x, player.kb.y, 5, 4);
-      player.kb.x *= 0.8; player.kb.y *= 0.8;
+      moveEntity(player, player.kb.x * dt, player.kb.y * dt, 5, 4);
+      const decay = Math.pow(0.8, dt);
+      player.kb.x *= decay; player.kb.y *= decay;
     }
-    if (player.moving) moveEntity(player, mvx * sp, mvy * sp, 5, 4);
+    if (player.moving) moveEntity(player, mvx * sp * dt, mvy * sp * dt, 5, 4);
     if (player.iframe > 0) player.iframe--;
 
     // transitions de carte
@@ -830,7 +831,7 @@
 
     updateEnemies(dt);
     updatePickups();
-    updateCamera(false);
+    updateCamera(false, dt);
   }
 
   function updateEnemies(dt) {
@@ -857,10 +858,11 @@
         vx = e.wander.x; vy = e.wander.y;
       }
       if (Math.abs(e.kb.x) > 0.1 || Math.abs(e.kb.y) > 0.1) {
-        moveEntity(e, e.kb.x, e.kb.y, e.r - 1, e.r - 1);
-        e.kb.x *= 0.78; e.kb.y *= 0.78;
+        moveEntity(e, e.kb.x * dt, e.kb.y * dt, e.r - 1, e.r - 1);
+        const decay = Math.pow(0.78, dt);
+        e.kb.x *= decay; e.kb.y *= decay;
       } else {
-        moveEntity(e, vx * e.speed, vy * e.speed, e.r - 1, e.r - 1);
+        moveEntity(e, vx * e.speed * dt, vy * e.speed * dt, e.r - 1, e.r - 1);
       }
       if (e.flash > 0) e.flash--;
       if (e.hurtCd > 0) e.hurtCd--;
@@ -924,7 +926,7 @@
   }
 
   // ---------------------------------------------------------------- caméra
-  function updateCamera(snap) {
+  function updateCamera(snap, dt) {
     const vw = VIEW_W, vh = VIEW_H;
     let tx = player.x - vw / 2, ty = player.y - vh / 2;
     const maxX = Math.max(0, map.w * TILE - vw);
@@ -933,8 +935,14 @@
     ty = Math.max(0, Math.min(maxY, ty));
     if (map.w * TILE < vw) tx = (map.w * TILE - vw) / 2;
     if (map.h * TILE < vh) ty = (map.h * TILE - vh) / 2;
-    if (snap) { cam.x = tx; cam.y = ty; }
-    else { cam.x += (tx - cam.x) * 0.18; cam.y += (ty - cam.y) * 0.18; }
+    if (snap) { cam.x = tx; cam.y = ty; return; }
+    // suivi souple, indépendant du framerate
+    const k = 1 - Math.pow(0.78, dt || 1);
+    cam.x += (tx - cam.x) * k;
+    cam.y += (ty - cam.y) * k;
+    // évite le sur-lissage résiduel (sinon micro-dérive infinie)
+    if (Math.abs(tx - cam.x) < 0.06) cam.x = tx;
+    if (Math.abs(ty - cam.y) < 0.06) cam.y = ty;
   }
 
   // ---------------------------------------------------------------- rendu
@@ -949,8 +957,9 @@
   }
   addEventListener("resize", resize);
 
-  function px(v) { return Math.round(v - cam.x); }
-  function py(v) { return Math.round(v - cam.y); }
+  // positions écran en sous-pixel (lissage) — la caméra est arrondie une seule fois par image
+  function px(v) { return v - cam.x; }
+  function py(v) { return v - cam.y; }
 
   // -------- helpers de rendu « peint »
   function lgV(x, y0, y1, a, b, c) {
@@ -986,14 +995,15 @@
   }
 
   function drawTile(c, sx, sy) {
-    const X = Math.round(sx * TILE - cam.x), Y = Math.round(sy * TILE - cam.y);
+    // positions sous-pixel (pas d'arrondi) — le +1 px de recouvrement évite les coutures entre tuiles
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y, T1 = TILE + 1;
     if (map.floor) {
       ctx.fillStyle = ((sx + sy) & 1) ? COL.floor : COL.floor2;
-      ctx.fillRect(X, Y, TILE, TILE);
+      ctx.fillRect(X, Y, T1, T1);
       if (((sx * 13 + sy * 7) % 6) === 0) { ctx.fillStyle = "rgba(20,16,12,.35)"; ctx.beginPath(); ctx.ellipse(X + 8, Y + 9, 6, 4, 0, 0, 7); ctx.fill(); }
     } else {
       ctx.fillStyle = ((sx + sy) & 1) ? COL.grass : COL.grass2;
-      ctx.fillRect(X, Y, TILE, TILE);
+      ctx.fillRect(X, Y, T1, T1);
       const m = (sx * 13 + sy * 7) % 11;
       if (m === 0 || m === 4) { ctx.fillStyle = "rgba(52,64,32,.2)"; ctx.beginPath(); ctx.ellipse(X + 6 + (m & 3), Y + 8, 11, 6, 0, 0, 7); ctx.fill(); }
       else if (m === 7) { ctx.fillStyle = "rgba(150,165,95,.14)"; ctx.beginPath(); ctx.ellipse(X + 9, Y + 7, 9, 5, 0, 0, 7); ctx.fill(); }
@@ -1002,8 +1012,8 @@
     switch (c) {
       case "=":
       case "x":
-        ctx.fillStyle = COL.path2; ctx.fillRect(X, Y, TILE, TILE);
-        ctx.fillStyle = COL.path; ctx.fillRect(X, Y + 2, TILE, TILE - 5);
+        ctx.fillStyle = COL.path2; ctx.fillRect(X, Y, T1, T1);
+        ctx.fillStyle = COL.path; ctx.fillRect(X, Y + 2, T1, TILE - 5);
         ctx.fillStyle = "rgba(226,196,140,.16)"; ctx.fillRect(X, Y + 5, TILE, 4);
         ctx.fillStyle = COL.pathDark;
         if ((sx + sy) % 3 === 0) { ctx.beginPath(); ctx.arc(X + 4, Y + 6, 1.4, 0, 7); ctx.fill(); }
@@ -1025,17 +1035,17 @@
         break;
       case "w": {
         const o = Math.sin((time * 0.04) + (sx + sy)) * 1.6;
-        ctx.fillStyle = COL.water; ctx.fillRect(X, Y, TILE, TILE);
-        ctx.fillStyle = COL.water2; ctx.fillRect(X, Y, TILE, 4);
+        ctx.fillStyle = COL.water; ctx.fillRect(X, Y, T1, T1);
+        ctx.fillStyle = COL.water2; ctx.fillRect(X, Y, T1, 4);
         ctx.strokeStyle = "rgba(205,216,207,.4)"; ctx.lineWidth = 1; ctx.lineCap = "round";
         ctx.beginPath(); ctx.moveTo(X + 2 + o, Y + 5); ctx.lineTo(X + 8 + o, Y + 5); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(X + 7 - o, Y + 11); ctx.lineTo(X + 13 - o, Y + 11); ctx.stroke();
         break;
       }
       case "#":
-        ctx.fillStyle = COL.wallDark; ctx.fillRect(X, Y, TILE, TILE);
-        ctx.fillStyle = COL.wall; ctx.fillRect(X, Y, TILE, TILE - 4);
-        ctx.fillStyle = COL.wallTop; ctx.fillRect(X, Y, TILE, 3);
+        ctx.fillStyle = COL.wallDark; ctx.fillRect(X, Y, T1, T1);
+        ctx.fillStyle = COL.wall; ctx.fillRect(X, Y, T1, TILE - 4);
+        ctx.fillStyle = COL.wallTop; ctx.fillRect(X, Y, T1, 3);
         ctx.strokeStyle = "rgba(20,18,14,.22)"; ctx.beginPath(); ctx.moveTo(X + 8, Y + 3); ctx.lineTo(X + 8, Y + TILE); ctx.stroke();
         break;
       case "^":
@@ -1046,24 +1056,24 @@
         ctx.restore();
         break;
       case "K":
-        ctx.fillStyle = "#242028"; ctx.fillRect(X, Y, TILE, TILE);
-        ctx.fillStyle = "#38343c"; ctx.fillRect(X, Y, TILE, TILE - 4);
-        ctx.fillStyle = "#4c4850"; ctx.fillRect(X, Y, TILE, 2);
+        ctx.fillStyle = "#242028"; ctx.fillRect(X, Y, T1, T1);
+        ctx.fillStyle = "#38343c"; ctx.fillRect(X, Y, T1, TILE - 4);
+        ctx.fillStyle = "#4c4850"; ctx.fillRect(X, Y, T1, 2);
         break;
     }
   }
 
   function drawHouseTop(sx, sy) {
-    const X = Math.round(sx * TILE - cam.x), Y = Math.round(sy * TILE - cam.y);
-    ctx.fillStyle = COL.roofDark; ctx.fillRect(X, Y - 2, TILE, TILE + 2);
-    ctx.fillStyle = COL.roof; ctx.fillRect(X, Y, TILE, TILE - 4);
-    ctx.fillStyle = COL.roofRim; ctx.fillRect(X, Y - 2, TILE, 2);
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y, T1 = TILE + 1;
+    ctx.fillStyle = COL.roofDark; ctx.fillRect(X, Y - 2, T1, TILE + 3);
+    ctx.fillStyle = COL.roof; ctx.fillRect(X, Y, T1, TILE - 4);
+    ctx.fillStyle = COL.roofRim; ctx.fillRect(X, Y - 2, T1, 2);
     ctx.strokeStyle = "rgba(60,30,20,.22)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(X, Y + 8); ctx.lineTo(X + TILE, Y + 8); ctx.stroke();
   }
   function drawHouseBody(sx, sy, isDoor) {
-    const X = Math.round(sx * TILE - cam.x), Y = Math.round(sy * TILE - cam.y);
-    ctx.fillStyle = COL.woodDark; ctx.fillRect(X, Y, TILE, TILE);
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y, T1 = TILE + 1;
+    ctx.fillStyle = COL.woodDark; ctx.fillRect(X, Y, T1, T1);
     ctx.fillStyle = COL.wood; ctx.fillRect(X, Y, TILE - 3, TILE - 2);
     ctx.fillStyle = "#8a6a44"; ctx.fillRect(X, Y, TILE - 3, 3);
     ctx.strokeStyle = "rgba(30,20,12,.3)"; ctx.lineWidth = 1;
@@ -1246,7 +1256,7 @@
   }
 
   function drawChest(sx, sy) {
-    const X = Math.round(sx * TILE - cam.x), Y = Math.round(sy * TILE - cam.y);
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y;
     castShadow(sx * TILE + 8, sy * TILE + 13, 9, 4);
     ctx.fillStyle = lgV(X, Y + 5, Y + 13, "#7a5a34", "#4a3320");
     ctx.fillRect(X + 2, Y + 5, 12, 8);
@@ -1262,7 +1272,7 @@
   }
 
   function drawSign(sx, sy) {
-    const X = Math.round(sx * TILE - cam.x), Y = Math.round(sy * TILE - cam.y);
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y;
     castShadow(sx * TILE + 8, sy * TILE + 14, 7, 3);
     ctx.fillStyle = lgH(X + 6, X + 10, Y, "#8a6a3e", COL.woodDark, "#2e2013");
     ctx.fillRect(X + 7, Y + 6, 2, 9);
@@ -1418,6 +1428,7 @@
       get quest() { return quest; },
       get enemies() { return enemies; },
       get pickups() { return pickups; },
+      get cam() { return cam; },
       newGame, loadGame,
       move(x, y) { input.mx = x; input.my = y; },
       stop() { input.mx = 0; input.my = 0; },

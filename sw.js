@@ -1,9 +1,9 @@
-const CACHE_NAME = "quete-chevalier-v3";
+const CACHE_NAME = "quete-chevalier-v4";
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=3",
-  "./game.js?v=3",
+  "./style.css?v=4",
+  "./game.js?v=4",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
