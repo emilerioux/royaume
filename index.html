@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>La Quête du Chevalier</title>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <meta name="theme-color" content="#1b1410">
@@ -34,6 +34,13 @@
     </div>
 
     <div id="toasts"></div>
+
+    <!-- Rappel des commandes (1er lancement) -->
+    <div id="firsthint" hidden>
+      <span class="fh-joy">◉ joystick&nbsp;: marcher</span>
+      <span>⚔️ frapper</span>
+      <span>✋ parler</span>
+    </div>
 
     <!-- Dialogue -->
     <div id="dialogue" hidden>
@@ -79,6 +86,8 @@
         <div id="menu-quests"></div>
         <h3>Sac</h3>
         <div id="menu-bag"></div>
+        <h3>Réglages</h3>
+        <button id="btn-lefty" class="toggle" type="button" aria-pressed="false">Mode gaucher&nbsp;: <b>Non</b></button>
       </div>
       <button id="btn-resume" class="big">Reprendre</button>
       <button id="btn-quit" class="small">Abandonner (retour au titre)</button>
@@ -102,6 +111,6 @@
     <div id="fade" aria-hidden="true"></div>
   </div>
 
-  <script src="game.js?v=9"></script>
+  <script src="game.js?v=10"></script>
 </body>
 </html>

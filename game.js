@@ -248,6 +248,8 @@
 
   const input = { mx: 0, my: 0, attack: false, interact: false };
   let atkHeld = false; // bouton ⚔️ maintenu -> attaques enchaînées
+  let leftHanded = false;
+  try { leftHanded = localStorage.getItem("quete-lefty") === "1"; } catch (e) {}
 
   // ---------------------------------------------------------------- sauvegarde
   function freshQuests() {
@@ -304,7 +306,17 @@
     startDialogue("", [
       "Bonrepos, un matin brumeux.",
       "Tu es le nouveau chevalier du village. Va voir l'Ancien, près du puits.",
-    ]);
+    ], showFirstHint);
+  }
+  function showFirstHint() {
+    try {
+      if (localStorage.getItem("quete-tuto")) return;
+      localStorage.setItem("quete-tuto", "1");
+    } catch (e) {}
+    const fh = document.getElementById("firsthint");
+    if (!fh) return;
+    fh.hidden = false;
+    setTimeout(() => { fh.hidden = true; }, 3600);
   }
 
   // ---------------------------------------------------------------- cartes : entrée
@@ -663,6 +675,19 @@
   document.getElementById("menu-btn").addEventListener("click", () => {
     if (state === "play") openMenu();
   });
+  // mode gaucher
+  function applyLefty() {
+    document.getElementById("game").classList.toggle("lefty", leftHanded);
+    const b = document.getElementById("btn-lefty");
+    b.setAttribute("aria-pressed", leftHanded ? "true" : "false");
+    b.querySelector("b").textContent = leftHanded ? "Oui" : "Non";
+  }
+  document.getElementById("btn-lefty").addEventListener("click", () => {
+    leftHanded = !leftHanded;
+    try { localStorage.setItem("quete-lefty", leftHanded ? "1" : "0"); } catch (e) {}
+    applyLefty();
+  });
+  applyLefty();
 
   // ---------------------------------------------------------------- écran-titre / game over
   const titleEl = document.getElementById("title");
@@ -749,8 +774,11 @@
     const nx = (dx / len), ny = (dy / len);
     knobEl.style.transform = `translate(${nx * cl}px, ${ny * cl}px)`;
     const mag = cl / R;
-    if (mag < 0.22) { input.mx = 0; input.my = 0; }
-    else { input.mx = nx * mag; input.my = ny * mag; }
+    if (mag < 0.12) { input.mx = 0; input.my = 0; }          // zone morte réduite
+    else {
+      const tier = mag < 0.62 ? 0.58 : 1;                    // marche / course, deux paliers
+      input.mx = nx * tier; input.my = ny * tier;
+    }
   }
   function stickEnd() {
     stickId = null;
@@ -760,11 +788,11 @@
   }
   cv.addEventListener("touchstart", (e) => {
     if (state !== "play") return;
+    const w = window.innerWidth;
     for (const t of e.changedTouches) {
-      // le joystick ne naît que dans la moitié gauche : un tap raté sur un bouton ne fait plus bouger le perso
-      if (stickId === null && t.clientX < window.innerWidth * 0.6) {
-        stickStart(t.identifier, t.clientX, t.clientY);
-      }
+      // le joystick ne naît que du côté marche (gauche, ou droite en mode gaucher)
+      const inZone = leftHanded ? t.clientX > w * 0.4 : t.clientX < w * 0.6;
+      if (stickId === null && inZone) stickStart(t.identifier, t.clientX, t.clientY);
     }
   }, { passive: true });
   cv.addEventListener("touchmove", (e) => {
@@ -845,8 +873,15 @@
     // attaque (le bouton maintenu enchaîne les coups à la cadence du geste)
     if (atkHeld) input.attack = true;
     if (input.attack && player.attack <= 0) {
-      player.attack = 15;
-      player.attackDir = player.dir;
+      const ax = input.mx, ay = input.my;
+      if (ax * ax + ay * ay > 0.04) {
+        // frappe vers là où pousse le joystick
+        player.attackDir = Math.abs(ax) > Math.abs(ay) ? (ax > 0 ? "right" : "left") : (ay > 0 ? "down" : "up");
+        player.dir = player.attackDir;
+      } else {
+        player.attackDir = player.dir;
+      }
+      player.attack = 12;                 // 15 -> 12 : le coup sort plus vite
       input.attack = false;
     }
     input.attack = false;
@@ -859,7 +894,8 @@
     if (player.moving) {
       if (Math.abs(mvx) > Math.abs(mvy)) player.dir = mvx > 0 ? "right" : "left";
       else player.dir = mvy > 0 ? "down" : "up";
-      player.anim += dt * 0.16;
+      // cadence des jambes proportionnelle à l'allure (marche vs course)
+      player.anim += dt * (0.1 + 0.09 * Math.min(1, Math.hypot(mvx, mvy)));
     }
     // "gait" : 0..1 qui monte/descend en douceur -> la marche s'enclenche et se pose sans à-coup
     player.gait += ((player.moving ? 1 : 0) - player.gait) * Math.min(1, 0.28 * dt);
@@ -1156,13 +1192,13 @@
     const atk = player.attack;
     const dv = DIRV[player.attackDir];
 
-    // coup d'épée : préparation (recul) -> frappe -> suivi
+    // coup d'épée : préparation (recul, courte) -> frappe -> suivi
     let atkP = 0, lunge = 0;
     if (atk > 0) {
-      atkP = 1 - atk / 15;
-      lunge = atkP < 0.22 ? -atkP * 5
-        : atkP < 0.68 ? -1.1 + (atkP - 0.22) / 0.46 * 5.5
-        : 4.4 - (atkP - 0.68) / 0.32 * 3.2;
+      atkP = 1 - atk / 12;
+      lunge = atkP < 0.12 ? -atkP * 4
+        : atkP < 0.6 ? -0.5 + (atkP - 0.12) / 0.48 * 5
+        : 4.5 - (atkP - 0.6) / 0.4 * 3;
     }
 
     const x = px(player.x) + (atk > 0 ? dv.x * lunge * 0.6 : 0);
@@ -1310,14 +1346,14 @@
 
     // ---- épée
     if (atk > 0) {
-      const a0 = -2.5, a1 = 1.15;
-      const sweep = atkP < 0.22 ? a0 - atkP * 1.6
-        : atkP < 0.72 ? a0 + (atkP - 0.22) / 0.5 * (a1 - a0)
-        : a1 + (atkP - 0.72) * 0.7;
+      const a0 = -2.3, a1 = 1.15;
+      const sweep = atkP < 0.12 ? a0 - atkP * 1.2
+        : atkP < 0.64 ? a0 + (atkP - 0.12) / 0.52 * (a1 - a0)
+        : a1 + (atkP - 0.64) * 0.6;
       const baseAng = Math.atan2(dv.y, dv.x);
       const len = player.sword ? 15 : 12;
       const hxp = x + dv.x * 3, hyp = yy + dv.y * 3 - 1;
-      if (atkP > 0.24 && atkP < 0.78) {
+      if (atkP > 0.14 && atkP < 0.8) {
         ctx.strokeStyle = "rgba(255,248,224," + (0.55 * (1 - Math.abs(atkP - 0.5) * 2)) + ")";
         ctx.lineWidth = 2.6;
         ctx.beginPath(); ctx.arc(hxp, hyp, len, baseAng + a0, baseAng + sweep, false); ctx.stroke();
