@@ -108,25 +108,34 @@ html, body {
 }
 #abtns {
   position: absolute;
-  right: max(20px, env(safe-area-inset-right));
-  bottom: max(28px, env(safe-area-inset-bottom));
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(30px, env(safe-area-inset-bottom)) + 14px);
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 24px;
   pointer-events: auto;
 }
 #abtns button {
+  position: relative;
   border-radius: 50%;
-  border: 2px solid rgba(239,224,192,.35);
-  background: rgba(27,20,16,.6);
+  border: 2px solid rgba(239,224,192,.4);
+  background: rgba(27,20,16,.62);
   color: #fff;
-  font-size: 24px;
+  font-size: 26px;
   display: grid;
   place-items: center;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-#btn-b { width: 56px; height: 56px; font-size: 20px; }
-#btn-a { width: 78px; height: 78px; }
-#abtns button:active { background: rgba(90,66,40,.85); transform: scale(.94); }
+/* zone tactile élargie au-delà du cercle visible */
+#abtns button::after {
+  content: ""; position: absolute; inset: -9px; border-radius: 50%;
+}
+#btn-b { width: 62px; height: 62px; font-size: 22px; }
+#btn-a { width: 90px; height: 90px; }
+#abtns button:active { background: rgba(90,66,40,.9); transform: scale(.93); }
 
 /* ---------- Toasts ---------- */
 #toasts {

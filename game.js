@@ -247,6 +247,7 @@
   let pickups = [];
 
   const input = { mx: 0, my: 0, attack: false, interact: false };
+  let atkHeld = false; // bouton ⚔️ maintenu -> attaques enchaînées
 
   // ---------------------------------------------------------------- sauvegarde
   function freshQuests() {
@@ -760,7 +761,10 @@
   cv.addEventListener("touchstart", (e) => {
     if (state !== "play") return;
     for (const t of e.changedTouches) {
-      if (stickId === null) { stickStart(t.identifier, t.clientX, t.clientY); }
+      // le joystick ne naît que dans la moitié gauche : un tap raté sur un bouton ne fait plus bouger le perso
+      if (stickId === null && t.clientX < window.innerWidth * 0.6) {
+        stickStart(t.identifier, t.clientX, t.clientY);
+      }
     }
   }, { passive: true });
   cv.addEventListener("touchmove", (e) => {
@@ -775,8 +779,25 @@
 
   const btnA = document.getElementById("btn-a");
   const btnB = document.getElementById("btn-b");
-  btnA.addEventListener("pointerdown", (e) => { e.preventDefault(); pressAction("attack"); });
-  btnB.addEventListener("pointerdown", (e) => { e.preventDefault(); pressAction("interact"); });
+  // Boutons : on écoute directement touchstart/touchend (fiable en multi-touch sur iOS,
+  // contrairement à pointerdown qui rate le 2e doigt quand le joystick est tenu).
+  function bindBtn(el, kind, onHold) {
+    el.addEventListener("touchstart", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (onHold) onHold(true);
+      pressAction(kind);
+    }, { passive: false });
+    const up = (e) => { if (e.cancelable) e.preventDefault(); if (onHold) onHold(false); };
+    el.addEventListener("touchend", up, { passive: false });
+    el.addEventListener("touchcancel", up);
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+    // souris (bureau) — le preventDefault du touchstart supprime le mousedown synthétique sur mobile
+    el.addEventListener("mousedown", (e) => { e.preventDefault(); if (onHold) onHold(true); pressAction(kind); });
+    el.addEventListener("mouseup", () => { if (onHold) onHold(false); });
+    el.addEventListener("mouseleave", () => { if (onHold) onHold(false); });
+  }
+  bindBtn(btnA, "attack", (v) => { atkHeld = v; });
+  bindBtn(btnB, "interact");
   function pressAction(kind) {
     if (state === "dialogue") { advanceDialogue(); return; }
     if (state !== "play") return;
@@ -815,13 +836,14 @@
   // ---------------------------------------------------------------- boucle : update
   function update(dt) {
     time += dt;
-    if (state !== "play") { input.attack = input.interact = false; return; }
+    if (state !== "play") { input.attack = input.interact = false; atkHeld = false; return; }
     keyboardMove();
 
     // interaction
     if (input.interact) { input.interact = false; tryInteract(); return; }
 
-    // attaque
+    // attaque (le bouton maintenu enchaîne les coups à la cadence du geste)
+    if (atkHeld) input.attack = true;
     if (input.attack && player.attack <= 0) {
       player.attack = 15;
       player.attackDir = player.dir;
