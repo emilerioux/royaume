@@ -203,7 +203,9 @@ html, body {
 /* ---------- Écran-titre atmosphérique ---------- */
 #title.title {
   /* la scène peinte du canvas passe au travers ; scrim doux pour la lisibilité du texte */
-  background: radial-gradient(ellipse 76% 52% at 50% 44%, rgba(8,6,3,.68), rgba(8,6,3,.2) 66%, transparent);
+  background:
+    radial-gradient(ellipse 58% 24% at 50% 40%, rgba(6,4,2,.58), transparent 78%),
+    radial-gradient(ellipse 80% 56% at 50% 44%, rgba(8,6,3,.6), rgba(8,6,3,.16) 66%, transparent);
   gap: 0;
   justify-content: center;
 }
@@ -218,16 +220,21 @@ html, body {
 
 .title h1 {
   display: flex; flex-direction: column; align-items: center;
-  font-size: clamp(30px, 10.5vw, 42px);
-  line-height: 1.06;
+  font-size: clamp(31px, 11vw, 44px);
+  line-height: 1.05;
   font-weight: 800;
   letter-spacing: .015em;
-  background: linear-gradient(180deg, #f8dfa6 0%, #e6b25a 55%, #cf9236 100%);
+  background: linear-gradient(180deg, #ffeaba 0%, #f4cc7d 46%, #dda24c 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
-  -webkit-text-stroke: .6px rgba(44,26,10,.4);
-  filter: drop-shadow(0 2px 1px rgba(0,0,0,.45));
+  -webkit-text-stroke: 1px rgba(34,19,5,.6);
+  filter:
+    drop-shadow(0 1px 0 rgba(26,14,3,.95))
+    drop-shadow(0 3px 11px rgba(0,0,0,.62));
 }
-.title h1 span:first-child { font-size: .78em; letter-spacing: .12em; text-transform: uppercase; opacity: .92; }
+.title h1 span:first-child {
+  font-size: .82em; letter-spacing: .18em; text-transform: uppercase;
+  margin-bottom: .06em;
+}
 
 .title .rule {
   width: 132px; height: 2px; position: relative;

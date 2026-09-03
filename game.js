@@ -236,7 +236,7 @@
   let time = 0;
 
   const player = {
-    x: 0, y: 0, dir: "down", moving: false, anim: 0,
+    x: 0, y: 0, dir: "down", moving: false, anim: 0, gait: 0,
     hp: 3, maxHp: 3, gold: 0, sword: 0,
     bag: [], iframe: 0, kb: { x: 0, y: 0 },
     attack: 0, attackDir: "down",
@@ -837,8 +837,11 @@
     if (player.moving) {
       if (Math.abs(mvx) > Math.abs(mvy)) player.dir = mvx > 0 ? "right" : "left";
       else player.dir = mvy > 0 ? "down" : "up";
-      player.anim += dt * 0.14;
-    } else player.anim = 0;
+      player.anim += dt * 0.16;
+    }
+    // "gait" : 0..1 qui monte/descend en douceur -> la marche s'enclenche et se pose sans à-coup
+    player.gait += ((player.moving ? 1 : 0) - player.gait) * Math.min(1, 0.28 * dt);
+    if (!player.moving && player.gait < 0.02) { player.gait = 0; player.anim = 0; }
     // recul
     if (Math.abs(player.kb.x) > 0.1 || Math.abs(player.kb.y) > 0.1) {
       moveEntity(player, player.kb.x * dt, player.kb.y * dt, 5, 4);
@@ -1115,68 +1118,163 @@
     }
   }
 
+  const footDust = [];
+  let lastStepSign = 0;
+
   function drawKnight() {
-    const x = px(player.x), y = py(player.y);
     if (player.iframe > 0 && (player.iframe >> 2) & 1) return;
-    castShadow(player.x, player.y + 5, 9, 4);
-    const step = player.moving ? (Math.floor(player.anim) % 2) : 0;
-    const bob = player.moving ? -Math.abs(Math.sin(player.anim * 3)) * 1 : 0;
+
     const d = player.dir;
-    // jambes
-    ctx.fillStyle = "#41372a";
-    ctx.fillRect(x - 4, y + 3 - step, 3, 5 + step);
-    ctx.fillRect(x + 1, y + 3 + step, 3, 5 - step);
-    const yy = y + bob;
-    // cape (dos, selon direction)
-    if (d !== "down") {
-      ctx.fillStyle = "#7c3d38";
-      ctx.beginPath();
-      ctx.moveTo(x - 4, yy - 6); ctx.quadraticCurveTo(x - 8, yy + 1, x - 5, yy + 6);
-      ctx.lineTo(x + 4, yy + 6); ctx.quadraticCurveTo(x + 6, yy - 1, x + 4, yy - 6); ctx.closePath(); ctx.fill();
+    const g = player.gait;                                  // 0..1 (marche enclenchée)
+    const idle = g < 0.12;
+    const wc = player.anim * 1.25;                          // phase de foulée
+    const swing = Math.sin(wc) * g;                         // -1..1 * gait
+    const bounce = Math.abs(Math.sin(wc)) * g;              // 0..1 (2 rebonds/cycle)
+    const breathe = (idle && player.attack <= 0) ? Math.sin(time * 0.06) : 0;
+    const atk = player.attack;
+    const dv = DIRV[player.attackDir];
+
+    // coup d'épée : préparation (recul) -> frappe -> suivi
+    let atkP = 0, lunge = 0;
+    if (atk > 0) {
+      atkP = 1 - atk / 15;
+      lunge = atkP < 0.22 ? -atkP * 5
+        : atkP < 0.68 ? -1.1 + (atkP - 0.22) / 0.46 * 5.5
+        : 4.4 - (atkP - 0.68) / 0.32 * 3.2;
     }
-    // torse
+
+    const x = px(player.x) + (atk > 0 ? dv.x * lunge * 0.6 : 0);
+    const y = py(player.y) + (atk > 0 ? dv.y * lunge * 0.6 : 0);
+
+    castShadow(player.x, player.y + 5, 9, 4);
+
+    // ---- poussière sous les pieds (un souffle par pas)
+    if (g > 0.35 && state === "play") {
+      const sign = swing >= 0 ? 1 : -1;
+      if (sign !== lastStepSign) {
+        lastStepSign = sign;
+        const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
+        const dirt = map.g[ty] && (map.g[ty][tx] === "=" || map.g[ty][tx] === "x");
+        footDust.push({ wx: player.x - 2 + Math.random() * 4, wy: player.y + 5, t: 0, life: 20, dirt: !!dirt });
+      }
+    }
+    for (let i = footDust.length - 1; i >= 0; i--) {
+      const p = footDust[i]; p.t++;
+      if (p.t >= p.life) { footDust.splice(i, 1); continue; }
+      const k = p.t / p.life, r = 1.4 + k * 3.8;
+      ctx.fillStyle = (p.dirt ? "rgba(196,174,136," : "rgba(150,166,110,") + (0.3 * (1 - k)) + ")";
+      ctx.beginPath(); ctx.ellipse(px(p.wx), py(p.wy) - k * 3, r, r * 0.5, 0, 0, 7); ctx.fill();
+    }
+
+    // ---- repère : roulis + léger penché dans la direction
+    ctx.save();
+    const pvx = x, pvy = y + 6;
+    ctx.translate(pvx, pvy);
+    const lean = (d === "left" ? -0.05 : d === "right" ? 0.05 : d === "up" ? -0.02 : 0.02) * g;
+    ctx.rotate(swing * 0.05 + lean);
+    ctx.translate(-pvx, -pvy);
+
+    const bob = idle ? breathe * 0.5 : -bounce * 1.8;
+    const yy = y + bob;
+    const sideAxis = (d === "left" || d === "right");
+    const backX = { left: 1, right: -1, up: 0, down: 0 }[d];
+    const backYd = { up: 1, down: -1, left: 0, right: 0 }[d];
+
+    // ---- jambes (grande foulée)
+    ctx.fillStyle = "#41372a";
+    if (sideAxis) {
+      const f = swing * 3.3, b = -swing * 3.3;
+      ctx.save(); ctx.translate(x + f, y + 3 - Math.max(0, swing) * 1.6); roundRectP(-1.6, 0, 3.2, 6, 1.4); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(x + b, y + 3 - Math.max(0, -swing) * 1.6); roundRectP(-1.6, 0, 3.2, 6, 1.4); ctx.fill(); ctx.restore();
+    } else {
+      const l1 = swing * 2.7, l2 = -swing * 2.7;
+      ctx.save(); ctx.translate(x - 3 + swing * 0.6, y + 3 + l1); roundRectP(-1.5, 0, 3, 6, 1.4); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(x + 3 + swing * 0.6, y + 3 + l2); roundRectP(-1.5, 0, 3, 6, 1.4); ctx.fill(); ctx.restore();
+    }
+
+    // ---- cape qui flotte
+    const flow = (g * 3.6) + Math.sin(time * 0.18 + wc) * (0.7 + g * 1.4);
+    if (d !== "down" || g > 0.1) {
+      ctx.fillStyle = "#7c3d38";
+      const cbx = x + backX * flow, cby = yy + 7 + Math.max(0, backYd) * flow;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, yy - 6);
+      ctx.quadraticCurveTo(x - 7 + backX * 2, yy + 1, cbx - 3, cby);
+      ctx.lineTo(cbx + 3, cby);
+      ctx.quadraticCurveTo(x + 7 + backX * 2, yy + 1, x + 4, yy - 6);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // ---- torse + plastron
     ctx.fillStyle = lgH(x - 5, x + 5, yy, "#4c72a6", "#33578f", "#22406c");
     roundRectP(x - 5, yy - 6, 10, 11, 3); ctx.fill();
-    ctx.fillStyle = COL.woodDark; ctx.fillRect(x - 5, yy + 1, 10, 1.5); // ceinture
-    // plastron
+    ctx.fillStyle = COL.woodDark; ctx.fillRect(x - 5, yy + 1, 10, 1.5);
     ctx.fillStyle = lgH(x - 4, x + 4, yy, COL.steelLit, COL.steel, COL.steelDark);
     ctx.beginPath(); ctx.moveTo(x - 4, yy - 6); ctx.lineTo(x + 4, yy - 6); ctx.lineTo(x + 3, yy - 1); ctx.lineTo(x, yy + 1); ctx.lineTo(x - 3, yy - 1); ctx.closePath(); ctx.fill();
-    // épaulières
-    orb(x - 5, yy - 6, 2.4, COL.steelLit, COL.steel, COL.steelDark);
-    orb(x + 5, yy - 6, 2.4, COL.steelLit, COL.steel, COL.steelDark);
-    // tête + heaume
-    orb(x, yy - 10, 3, "#f0cda0", COL.skin, "#a97e52");
-    orb(x, yy - 12, 3.4, COL.steelLit, COL.steel, COL.steelDark);
+
+    // ---- épaules qui balancent (opposition aux jambes)
+    const shR = swing * 1.4;
+    orb(x - 5, yy - 6 - shR, 2.4, COL.steelLit, COL.steel, COL.steelDark);
+    orb(x + 5, yy - 6 + shR, 2.4, COL.steelLit, COL.steel, COL.steelDark);
+
+    // ---- tête + heaume (contre-balancement léger)
+    const hx = x - swing * 0.6;
+    orb(hx, yy - 10, 3, "#f0cda0", COL.skin, "#a97e52");
+    orb(hx, yy - 12, 3.4, COL.steelLit, COL.steel, COL.steelDark);
     ctx.strokeStyle = "rgba(40,44,50,.7)"; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(x, yy - 15); ctx.lineTo(x, yy - 9); ctx.stroke();
-    ctx.fillStyle = lgV(x, yy - 18, yy - 12, "#c85742", "#7c2f26");
-    ctx.beginPath(); ctx.moveTo(x - 1, yy - 15); ctx.quadraticCurveTo(x + 5, yy - 20, x + 2, yy - 11); ctx.quadraticCurveTo(x, yy - 13, x - 1, yy - 15); ctx.fill();
-    // yeux
+    ctx.beginPath(); ctx.moveTo(hx, yy - 15); ctx.lineTo(hx, yy - 9); ctx.stroke();
+
+    // ---- panache qui suit
+    const plx = hx + 1 - backX * g * 2 + Math.sin(time * 0.2 + wc) * (0.7 + g * 1.5) + swing * 1.2;
+    ctx.fillStyle = lgV(hx, yy - 18, yy - 12, "#c85742", "#7c2f26");
+    ctx.beginPath();
+    ctx.moveTo(hx - 1, yy - 15);
+    ctx.quadraticCurveTo(plx + 4, yy - 20, plx, yy - 10);
+    ctx.quadraticCurveTo(hx + 1, yy - 13, hx - 1, yy - 15);
+    ctx.fill();
+
+    // ---- yeux
     ctx.fillStyle = "#20140c";
-    if (d === "down") { ctx.fillRect(x - 2, yy - 10, 1, 1.5); ctx.fillRect(x + 1, yy - 10, 1, 1.5); }
-    else if (d === "left") ctx.fillRect(x - 2.5, yy - 10, 1, 1.5);
-    else if (d === "right") ctx.fillRect(x + 1.5, yy - 10, 1, 1.5);
-    // rim light chaud côté soleil
+    if (d === "down") { ctx.fillRect(hx - 2, yy - 10, 1, 1.5); ctx.fillRect(hx + 1, yy - 10, 1, 1.5); }
+    else if (d === "left") ctx.fillRect(hx - 2.5, yy - 10, 1, 1.5);
+    else if (d === "right") ctx.fillRect(hx + 1.5, yy - 10, 1, 1.5);
+
+    // ---- rim light
     ctx.strokeStyle = "rgba(255,224,165,.5)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(x - 1, yy - 2, 7, -2.5, -0.5); ctx.stroke();
-    // épée
-    if (player.attack > 0) {
-      const dv = DIRV[player.attackDir];
-      const len = player.sword ? 15 : 11;
-      const bx = x + dv.x * 5, by = yy + dv.y * 5 - 2;
-      ctx.fillStyle = lgH(bx - 2, bx + 2, by, COL.steelLit, "#c2c8d0", "#7c828a");
-      if (dv.x) ctx.fillRect(dv.x > 0 ? bx : bx - len, by - 1.5, len, 3);
-      else ctx.fillRect(bx - 1.5, dv.y > 0 ? by : by - len, 3, len);
-      ctx.fillStyle = "#b98f45"; ctx.fillRect(bx - 2.5, by - 2.5, 5, 2.5);
-      if (player.attack > 12 || player.attack < 6) {
-        ctx.strokeStyle = "rgba(255,246,220,.4)"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(x, yy - 2, len, 0, Math.PI * 1.2); ctx.stroke();
+
+    // ---- épée
+    if (atk > 0) {
+      const a0 = -2.5, a1 = 1.15;
+      const sweep = atkP < 0.22 ? a0 - atkP * 1.6
+        : atkP < 0.72 ? a0 + (atkP - 0.22) / 0.5 * (a1 - a0)
+        : a1 + (atkP - 0.72) * 0.7;
+      const baseAng = Math.atan2(dv.y, dv.x);
+      const len = player.sword ? 15 : 12;
+      const hxp = x + dv.x * 3, hyp = yy + dv.y * 3 - 1;
+      if (atkP > 0.24 && atkP < 0.78) {
+        ctx.strokeStyle = "rgba(255,248,224," + (0.55 * (1 - Math.abs(atkP - 0.5) * 2)) + ")";
+        ctx.lineWidth = 2.6;
+        ctx.beginPath(); ctx.arc(hxp, hyp, len, baseAng + a0, baseAng + sweep, false); ctx.stroke();
       }
+      ctx.save(); ctx.translate(hxp, hyp); ctx.rotate(baseAng + sweep);
+      ctx.fillStyle = lgH(0, len, 0, "#eef1f5", "#c2c8d0", "#8b929c");
+      roundRectP(0, -1.6, len, 3.2, 1.4); ctx.fill();
+      ctx.fillStyle = "#b98f45"; roundRectP(-2, -2.4, 4, 4.8, 1.4); ctx.fill();
+      ctx.restore();
     } else {
-      ctx.fillStyle = lgV(x, yy - 3, yy + 4, COL.steelLit, "#8b929c");
-      if (d === "left") ctx.fillRect(x - 6, yy - 3, 2, 8);
-      else ctx.fillRect(x + 4, yy - 3, 2, 8);
+      const sb = bounce * 1.4;
+      ctx.save();
+      const sx2 = (d === "left" ? x - 5 : x + 5);
+      ctx.translate(sx2, yy - 2 + sb);
+      ctx.rotate(swing * 0.12 + (d === "left" ? 0.16 : -0.16));
+      ctx.fillStyle = lgV(0, -3, 6, COL.steelLit, "#8b929c");
+      roundRectP(-1, -3, 2, 9, 1); ctx.fill();
+      ctx.fillStyle = "#b98f45"; roundRectP(-1.6, -3.6, 3.2, 1.8, 0.8); ctx.fill();
+      ctx.restore();
     }
+
+    ctx.restore(); // roulis
   }
   function roundRectP(x, y, w, h, r) {
     ctx.beginPath();
