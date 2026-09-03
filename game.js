@@ -668,12 +668,40 @@
   const overEl = document.getElementById("over");
   const hudEl = document.getElementById("hud");
   const padEl = document.getElementById("pad");
+  function saveSummary() {
+    try {
+      const d = JSON.parse(localStorage.getItem(SAVE_KEY));
+      if (!d) return null;
+      const name = (MAPS[d.mapId] && MAPS[d.mapId].name) || "En chemin";
+      const gold = (d.player && d.player.gold) || 0;
+      let q = 0;
+      for (const id in (d.quest || {})) { const st = d.quest[id].state; if (st === "active" || st === "ready") q++; }
+      const qt = q === 0 ? "aucune quête en cours" : q === 1 ? "1 quête" : q + " quêtes";
+      return name + " · " + gold + " or · " + qt;
+    } catch (e) { return null; }
+  }
   function showTitle() {
     state = "title";
     titleEl.hidden = false;
     hudEl.hidden = true;
     padEl.hidden = true;
-    document.getElementById("btn-continue").hidden = !hasSave();
+    const has = hasSave();
+    document.getElementById("btn-continue").hidden = !has;
+    const csub = document.getElementById("continue-sub");
+    const sum = has ? saveSummary() : null;
+    if (sum) { csub.textContent = sum; csub.hidden = false; } else csub.hidden = true;
+    // relance la séquence d'apparition
+    titleEl.classList.remove("animate");
+    void titleEl.offsetWidth;
+    titleEl.classList.add("animate");
+  }
+
+  const fadeEl = document.getElementById("fade");
+  const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function fadeTo(fn) {
+    if (REDUCED) { fn(); return; }
+    fadeEl.classList.add("on");
+    setTimeout(() => { fn(); requestAnimationFrame(() => fadeEl.classList.remove("on")); }, 340);
   }
   function startPlay() {
     titleEl.hidden = true;
@@ -683,15 +711,15 @@
     state = "play";
     updateHud();
   }
-  document.getElementById("btn-new").addEventListener("click", newGame);
-  document.getElementById("btn-continue").addEventListener("click", loadGame);
-  document.getElementById("btn-revive").addEventListener("click", () => {
+  document.getElementById("btn-new").addEventListener("click", () => fadeTo(newGame));
+  document.getElementById("btn-continue").addEventListener("click", () => fadeTo(loadGame));
+  document.getElementById("btn-revive").addEventListener("click", () => fadeTo(() => {
     overEl.hidden = true;
     player.hp = player.maxHp;
     player.iframe = 60;
     enterMap("village", MAPS.village.spawn.x, MAPS.village.spawn.y);
     startPlay();
-  });
+  }));
   function gameOver() {
     state = "over";
     dlgEl.hidden = true; menuEl.hidden = true; shopEl.hidden = true;
@@ -762,7 +790,7 @@
     keys[e.key.toLowerCase()] = true;
     const k = e.key.toLowerCase();
     if (state === "dialogue" && (k === " " || k === "enter" || k === "e" || k === "j")) { e.preventDefault(); advanceDialogue(); return; }
-    if (state === "title" && (k === "enter" || k === " ")) { hasSave() ? loadGame() : newGame(); return; }
+    if (state === "title" && (k === "enter" || k === " ")) { fadeTo(hasSave() ? loadGame : newGame); return; }
     if (state === "over" && (k === "enter" || k === " ")) { document.getElementById("btn-revive").click(); return; }
     if (state === "play") {
       if (k === "j" || k === " ") { e.preventDefault(); input.attack = true; }
@@ -1399,6 +1427,114 @@
     ctx.restore();
   }
 
+  // ---------------------------------------------------------------- scène de l'écran-titre
+  function renderTitle() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const W = VIEW_W, H = VIEW_H, t = time, hz = H * 0.56;
+    // ciel d'aube
+    let g = ctx.createLinearGradient(0, 0, 0, hz + 8);
+    g.addColorStop(0, "#f0d59a"); g.addColorStop(0.55, "#e4ab63"); g.addColorStop(1, "#d68f56");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, hz + 8);
+    // sol
+    g = ctx.createLinearGradient(0, hz, 0, H);
+    g.addColorStop(0, "#6f7c45"); g.addColorStop(1, "#3f4c2b");
+    ctx.fillStyle = g; ctx.fillRect(0, hz, W, H - hz);
+    // halo de soleil
+    const sx = W * 0.5, sy = H * 0.32;
+    g = ctx.createRadialGradient(sx, sy, 0, sx, sy, H * 0.85);
+    g.addColorStop(0, "rgba(255,247,222,.8)"); g.addColorStop(.28, "rgba(255,230,180,.3)"); g.addColorStop(1, "rgba(255,230,180,0)");
+    ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+    // montagnes fondues
+    let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const mLayers = [
+      { y: hz - H * .16, a: .38, c: "#9aa39c", amp: .06, step: .30 },
+      { y: hz - H * .09, a: .5, c: "#828d81", amp: .08, step: .24 },
+      { y: hz - H * .02, a: .62, c: "#6f7a6c", amp: .095, step: .20 },
+    ];
+    for (const L of mLayers) {
+      ctx.fillStyle = L.c; ctx.globalAlpha = L.a;
+      ctx.beginPath(); ctx.moveTo(-20, hz + 6);
+      let x = -20, py = L.y;
+      while (x < W + 40) {
+        const nx = x + W * L.step * (0.7 + rnd() * 0.6);
+        const ny = L.y - rnd() * H * L.amp;
+        ctx.quadraticCurveTo((x + nx) / 2, Math.min(py, ny) - H * L.amp * 0.4, nx, ny);
+        x = nx; py = ny;
+      }
+      ctx.lineTo(W + 40, hz + 6); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    // château au loin (silhouette)
+    ctx.save();
+    ctx.translate(W * 0.62, hz - 2);
+    ctx.fillStyle = "rgba(44,34,24,.82)";
+    ctx.fillRect(-16, -14, 12, 14);
+    ctx.fillRect(-4, -22, 12, 22);
+    ctx.fillRect(8, -12, 9, 12);
+    for (const cx of [-16, -12, -8, -4, 0, 4, 8, 13]) ctx.fillRect(cx, (cx >= -4 && cx <= 4) ? -25 : -17, 3, 4);
+    ctx.strokeStyle = "rgba(44,34,24,.82)"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(2, -22); ctx.lineTo(2, -30); ctx.stroke();
+    ctx.fillStyle = "rgba(140,58,52,.9)";
+    ctx.beginPath(); ctx.moveTo(2, -29); ctx.lineTo(11, -26); ctx.lineTo(2, -23); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // voile de brume sur l'horizon
+    g = ctx.createLinearGradient(0, hz - H * .07, 0, hz + H * .05);
+    g.addColorStop(0, "rgba(232,214,180,0)"); g.addColorStop(1, "rgba(232,214,180,.55)");
+    ctx.fillStyle = g; ctx.fillRect(0, hz - H * .07, W, H * .12);
+    // nuages qui dérivent
+    ctx.save(); ctx.globalCompositeOperation = "screen";
+    for (let i = 0; i < 3; i++) {
+      const cw = 46 + i * 16;
+      const cx = ((i * 150 + t * (0.1 + i * 0.03)) % (W + cw + 80)) - cw - 40;
+      const cy = H * (0.1 + i * 0.06);
+      ctx.fillStyle = "rgba(255,244,222,.11)";
+      ctx.beginPath(); ctx.ellipse(cx, cy, cw, cw * 0.26, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + cw * 0.4, cy + 3, cw * 0.5, cw * 0.18, 0, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+    // colline de premier plan + herbes
+    g = ctx.createLinearGradient(0, H * 0.74, 0, H);
+    g.addColorStop(0, "#48532e"); g.addColorStop(1, "#2c3419");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(-4, H + 4);
+    ctx.quadraticCurveTo(W * 0.3, H * 0.78, W * 0.55, H * 0.82);
+    ctx.quadraticCurveTo(W * 0.8, H * 0.86, W + 4, H * 0.8);
+    ctx.lineTo(W + 4, H + 4); ctx.closePath(); ctx.fill();
+    ctx.lineCap = "round";
+    for (let i = 0; i < 26; i++) {
+      const gx = (i / 25) * (W + 20) - 10;
+      const base = H * 0.82 + Math.sin(i * 1.7) * 6 + (i % 3) * 3;
+      const len = 6 + (i % 4) * 3;
+      const sway = Math.sin(t * 0.05 + i * 0.6) * 2.2;
+      ctx.strokeStyle = i % 2 ? "rgba(150,168,96,.55)" : "rgba(90,110,58,.6)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(gx, base);
+      ctx.quadraticCurveTo(gx + sway * 0.5, base - len * 0.6, gx + sway, base - len);
+      ctx.stroke();
+    }
+    // rais de lumière
+    ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.fillStyle = "rgba(255,226,160,.05)";
+    for (let i = 0; i < 3; i++) {
+      const ox = W * (0.06 + i * 0.16);
+      ctx.beginPath(); ctx.moveTo(ox, -8); ctx.lineTo(ox + W * 0.07, -8);
+      ctx.lineTo(ox + W * 0.4, H + 8); ctx.lineTo(ox + W * 0.26, H + 8); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    // poussières
+    ctx.save(); ctx.globalCompositeOperation = "screen";
+    for (let i = 0; i < 10; i++) {
+      const mx = ((i * 89.3 + t * 0.25) % (W + 20)) - 10;
+      const my = H - ((i * 53.7 + t * 0.35) % H);
+      ctx.fillStyle = "rgba(255,240,205," + (0.1 + 0.14 * Math.abs(Math.sin(t * 0.03 + i))) + ")";
+      ctx.beginPath(); ctx.arc(mx, my, 0.8, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+    // vignette
+    const vg = ctx.createRadialGradient(W / 2, H * 0.44, H * 0.34, W / 2, H * 0.5, H * 0.98);
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(10,8,5,.42)");
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
+
   // ---------------------------------------------------------------- boucle
   let last = performance.now();
   function frame(now) {
@@ -1406,7 +1542,8 @@
     last = now;
     if (dt > 3) dt = 3;
     update(dt);
-    if (state !== "title") render();
+    if (state === "title") renderTitle();
+    else render();
     requestAnimationFrame(frame);
   }
 
