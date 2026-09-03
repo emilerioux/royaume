@@ -26,11 +26,12 @@
     g.putImageData(im, 0, 0);
   })();
 
-  // ambiance par zone
+  // ambiance : fondu village doré (nord) <-> forêt fraîche (sud) sur la carte continue,
+  // + réglages fixes pour la grotte et les intérieurs.
+  const AMB = { village: [255, 214, 150, 0.10], foret: [110, 140, 105, 0.145] };
   const ZONE = {
-    village: { tint: "rgba(255,214,150,0.10)", vig: 0.30, shafts: true },
-    foret: { tint: "rgba(110,140,105,0.14)", vig: 0.36, shafts: true },
     grotte: { tint: "rgba(20,26,44,0.44)", vig: 0.58, torch: true },
+    interieur: { tint: "rgba(58,40,22,0.16)", vig: 0.50, hearth: true },
   };
 
   // Palette « À ciel ouvert » : terreuse, désaturée, lumière chaude / ombres froides
@@ -82,80 +83,113 @@
     }
   }
 
-  const SOLID = new Set(["T", "#", "H", "R", "w", "S", "o", "C", "K", "f"]);
+  const SOLID = new Set(["T", "#", "H", "R", "w", "S", "o", "C", "K", "f", "t", "b", "k", "v", "h"]);
   const isSolidChar = (c) => SOLID.has(c);
 
   // ---------------------------------------------------------------- cartes
-  function buildVillage() {
-    const W = 24, H = 22, g = grid(W, H, ".");
+  // Village (nord) + forêt (sud) = UNE seule carte continue : plus de coupure d'écran
+  // en franchissant la lisière. Seuls les lieux fermés (grotte, maisons) sont des cartes à part.
+  function buildOverworld() {
+    const W = 26, H = 44, g = grid(W, H, ".");
+    const forestY = 21;               // rangée de la lisière (ligne d'arbres)
     border(g, "T");
-    rect(g, 19, 2, 4, 3, "w");
-    house(g, 4, 3, 4, 4);
-    house(g, 12, 3, 4, 4);
-    house(g, 4, 12, 4, 4);
-    hline(g, 6, 13, 8, "=");
-    hline(g, 6, 18, 15, "=");
-    vline(g, 7, 15, 6, "=");
-    vline(g, 7, 20, 13, "=");
-    vline(g, 8, 20, 18, "=");
-    hline(g, 13, 18, 20, "=");
-    rect(g, 10, 10, 2, 2, "o"); // puits
-    put(g, 15, 13, "S"); // panneau
-    put(g, 13, 21, "x"); // sortie sud -> forêt
-    scatter(g, ",", 16, (x, y) => y > 18);
-    scatter(g, "~", 10);
+
+    // bâtiments visitables : corps solide + une porte (case "=") qui déclenche l'entrée
+    const buildings = [
+      { x: 6, y: 2, w: 4, h: 4, kind: "bakery", door: { x: 7, y: 5 }, to: "boulangerie" },
+      { x: 12, y: 1, w: 5, h: 5, kind: "manor", door: { x: 14, y: 5 }, to: "manoir" },
+      { x: 18, y: 2, w: 4, h: 4, kind: "cottage", door: { x: 19, y: 5 }, to: "chaumiereA" },
+      { x: 6, y: 11, w: 4, h: 4, kind: "shop", door: { x: 7, y: 14 }, to: "echoppe" },
+      { x: 16, y: 11, w: 4, h: 4, kind: "cottage2", door: { x: 17, y: 14 }, to: "chaumiereB" },
+    ];
+
+    // -------- sentiers du village (tracés d'abord, les murs passeront par-dessus)
+    hline(g, 5, 22, 6, "=");           // rue nord
+    hline(g, 5, 22, 15, "=");          // rue sud
+    vline(g, 6, 15, 5, "=");           // desserte ouest
+    vline(g, 6, 15, 22, "=");          // desserte est
+    vline(g, 6, 15, 11, "=");          // place (devant le puits)
+    vline(g, 6, 15, 12, "=");
+    vline(g, 15, forestY, 11, "=");    // descente vers la lisière
+    vline(g, 15, forestY, 12, "=");
+
+    rect(g, 13, 8, 2, 2, "o");         // puits, au cœur de la place
+
+    for (const b of buildings) {       // murs
+      rect(g, b.x, b.y, b.w, b.h, "H");
+    }
+    for (const b of buildings) {       // on reperce la porte + le pas de porte
+      put(g, b.door.x, b.door.y, "=");
+      put(g, b.door.x, b.door.y + 1, "=");
+    }
+
+    put(g, 10, 10, "S");              // panneau du village
+    scatter(g, ",", 14, (x, y) => y > forestY - 2);
+    scatter(g, "~", 7, (x, y) => y > forestY - 2);
+
+    // -------- lisière : ligne d'arbres avec une trouée (x = 11,12)
+    for (let x = 1; x < W - 1; x++) if (x < 11 || x > 12) put(g, x, forestY, "T");
+
+    // ============ FORÊT (y : 22..42) ============
+    rect(g, 3, 24, 3, 2, "T"); rect(g, 20, 25, 3, 3, "T");
+    rect(g, 6, 31, 2, 4, "T"); rect(g, 17, 33, 4, 2, "T");
+    rect(g, 9, 38, 3, 2, "T"); rect(g, 4, 35, 2, 3, "T"); rect(g, 22, 34, 2, 3, "T");
+    vline(g, 22, 42, 11, "="); vline(g, 22, 42, 12, "=");   // sente principale
+    hline(g, 12, 22, 34, "="); hline(g, 5, 12, 26, "=");     // embranchements
+    hline(g, 1, 24, 29, "w"); put(g, 11, 29, "="); put(g, 12, 29, "="); // ruisseau + pont
+    put(g, 8, 26, "S");                                      // panneau de la forêt
+    put(g, 11, 42, "K"); put(g, 12, 42, "K");               // façade de la grotte
+    put(g, 11, 41, "^"); put(g, 12, 41, "^");               // le seuil déclenche l'entrée
+    scatter(g, "~", 22, (x, y) => y < forestY + 1);
+    scatter(g, ",", 9, (x, y) => y < forestY + 1);
+
     return {
-      id: "village", g, name: "Village de Bonrepos",
-      spawn: { x: 12, y: 17 },
-      transitions: [{ x: 13, y: 21, to: "foret", tx: 11, ty: 2 }],
-      npcs: [
-        { id: "elder", x: 12, y: 8, name: "Ancien", color: "#7c5cff", hair: "#d8d8d8" },
-        { id: "baker", x: 6, y: 8, name: "Boulangère", color: "#d98b3c", hair: "#5b3a1e" },
-        { id: "shop", x: 18, y: 10, name: "Marchand", color: "#3c8f6b", hair: "#2a2a2a", shop: true },
+      id: "village", g, name: "Village de Bonrepos", forestY, buildings,
+      spawn: { x: 11, y: 13 },
+      transitions: [
+        { x: 7, y: 5, to: "boulangerie", tx: 5, ty: 6 },
+        { x: 14, y: 5, to: "manoir", tx: 5, ty: 7 },
+        { x: 19, y: 5, to: "chaumiereA", tx: 4, ty: 5 },
+        { x: 7, y: 14, to: "echoppe", tx: 5, ty: 6 },
+        { x: 17, y: 14, to: "chaumiereB", tx: 4, ty: 5 },
+        { x: 11, y: 41, to: "grotte", tx: 8, ty: 11 },
+        { x: 12, y: 41, to: "grotte", tx: 8, ty: 11 },
       ],
-      signs: { "15,13": ["« Village de Bonrepos »", "Au sud : la forêt. On dit qu'une brute rôde dans la grotte."] },
-      enemies: [],
-      wells: ["10,10", "11,10", "10,11", "11,11"],
+      npcs: [
+        { id: "elder", x: 12, y: 9, name: "Ancien", color: "#7c5cff", hair: "#d8d8d8" },
+        { id: "woodcutter", x: 20, y: 34, name: "Bûcheron", color: "#8a6a3a", hair: "#3a2a18" },
+      ],
+      signs: {
+        "10,10": ["« Village de Bonrepos »", "Au sud, par la trouée : la forêt. Une brute rôderait dans la grotte."],
+        "8,26": ["Sentier de la forêt.", "Nord : le village. Sud : la grotte.", "Attention aux slimes et aux loups."],
+      },
+      enemies: [
+        { type: "slime", x: 7, y: 25 }, { type: "slime", x: 16, y: 27 },
+        { type: "slime", x: 9, y: 33 }, { type: "slime", x: 19, y: 32 },
+        { type: "slime", x: 6, y: 38 }, { type: "slime", x: 15, y: 39 },
+        { type: "slime", x: 21, y: 28 },
+        { type: "wolf", x: 5, y: 40 }, { type: "wolf", x: 22, y: 37 },
+      ],
+      wells: ["13,8", "14,8", "13,9", "14,9"],
     };
   }
 
-  function buildForet() {
-    const W = 24, H = 26, g = grid(W, H, ".");
-    border(g, "T");
-    // bosquets
-    rect(g, 3, 5, 3, 2, "T"); rect(g, 17, 4, 3, 3, "T");
-    rect(g, 6, 12, 2, 4, "T"); rect(g, 15, 14, 4, 2, "T");
-    rect(g, 9, 20, 3, 2, "T"); rect(g, 4, 18, 2, 3, "T");
-    // ruisseau + pont
-    hline(g, 1, 22, 10, "w"); put(g, 11, 10, "="); put(g, 12, 10, "=");
-    // chemins
-    vline(g, 1, 25, 11, "="); vline(g, 1, 25, 12, "=");
-    hline(g, 12, 20, 16, "="); hline(g, 4, 11, 22, "=");
-    // entrée village (haut) et grotte (bas)
-    put(g, 11, 0, "="); put(g, 12, 0, "=");
-    put(g, 11, 25, "K"); put(g, 12, 25, "K"); // façade de la grotte
-    put(g, 11, 24, "^"); put(g, 12, 24, "^"); // le seuil déclenche l'entrée
-    put(g, 8, 8, "S");
-    scatter(g, "~", 26); scatter(g, ",", 12);
+  // Intérieur générique (maison, échoppe, demeure) : petite pièce, un seuil de sortie.
+  function buildInterior(id, name, s) {
+    const W = s.w, H = s.h, g = grid(W, H, ".");
+    border(g, "#");
+    put(g, s.door, H - 1, "^");                       // seuil -> retour au village
+    for (const [fx, fy, fc] of (s.furniture || [])) put(g, fx, fy, fc);
+    for (const k in (s.signs || {})) { const p = k.split(","); put(g, +p[0], +p[1], "S"); }
     return {
-      id: "foret", g, name: "Forêt de Bonrepos",
-      spawn: { x: 11, y: 2 },
-      transitions: [
-        { x: 11, y: 0, to: "village", tx: 13, ty: 20 },
-        { x: 12, y: 0, to: "village", tx: 13, ty: 20 },
-        { x: 11, y: 24, to: "grotte", tx: 8, ty: 11 },
-        { x: 12, y: 24, to: "grotte", tx: 8, ty: 11 },
-      ],
-      npcs: [{ id: "woodcutter", x: 18, y: 17, name: "Bûcheron", color: "#8a6a3a", hair: "#3a2a18" }],
-      signs: { "8,8": ["Sentier de la forêt.", "Nord : le village. Sud : la grotte.", "Attention aux slimes et aux loups."] },
-      enemies: [
-        { type: "slime", x: 7, y: 7 }, { type: "slime", x: 15, y: 8 },
-        { type: "slime", x: 9, y: 13 }, { type: "slime", x: 17, y: 13 },
-        { type: "slime", x: 6, y: 20 }, { type: "slime", x: 14, y: 21 },
-        { type: "slime", x: 19, y: 18 },
-        { type: "wolf", x: 5, y: 22 }, { type: "wolf", x: 20, y: 21 },
-      ],
+      id, g, name, floor: true, interior: true, forestY: 0,
+      spawn: { x: s.door, y: H - 2 },
+      transitions: [{ x: s.door, y: H - 1, to: "village", tx: s.back.x, ty: s.back.y }],
+      npcs: s.npcs || [],
+      signs: s.signs || {},
+      enemies: [],
       wells: [],
+      hearthPos: s.hearth || null,
     };
   }
 
@@ -169,7 +203,7 @@
     return {
       id: "grotte", g, name: "Grotte de la brute",
       spawn: { x: 8, y: 11 },
-      transitions: [{ x: 8, y: 13, to: "foret", tx: 11, ty: 22 }],
+      transitions: [{ x: 8, y: 13, to: "village", tx: 11, ty: 39 }],
       npcs: [],
       signs: {},
       enemies: [{ type: "brute", x: 8, y: 5 }],
@@ -179,7 +213,35 @@
     };
   }
 
-  const MAPS = { village: buildVillage(), foret: buildForet(), grotte: buildGrotte() };
+  const MAPS = {
+    village: buildOverworld(),
+    manoir: buildInterior("manoir", "Demeure de l'Ancien", {
+      w: 11, h: 8, door: 5, back: { x: 14, y: 6 }, hearth: [8, 1],
+      furniture: [[8, 1, "h"], [1, 1, "k"], [1, 2, "k"], [1, 3, "k"], [5, 4, "t"], [9, 5, "v"], [2, 5, "v"], [7, 4, "u"]],
+      signs: { "3,1": ["Des cartes jaunies, une épée émoussée au mur.", "L'Ancien veille sur Bonrepos depuis quarante hivers."] },
+    }),
+    boulangerie: buildInterior("boulangerie", "Boulangerie", {
+      w: 11, h: 8, door: 5, back: { x: 7, y: 6 }, hearth: [2, 1],
+      furniture: [[2, 1, "h"], [7, 3, "t"], [9, 5, "v"], [1, 4, "k"], [1, 5, "v"], [7, 4, "u"]],
+      npcs: [{ id: "baker", x: 5, y: 3, name: "Boulangère", color: "#d98b3c", hair: "#5b3a1e" }],
+    }),
+    echoppe: buildInterior("echoppe", "Échoppe du village", {
+      w: 11, h: 8, door: 5, back: { x: 7, y: 15 },
+      furniture: [[3, 4, "t"], [7, 4, "t"], [1, 2, "v"], [1, 3, "v"], [9, 2, "v"], [9, 3, "v"], [3, 5, "u"]],
+      npcs: [{ id: "shop", x: 5, y: 2, name: "Marchand", color: "#3c8f6b", hair: "#2a2a2a", shop: true }],
+    }),
+    chaumiereA: buildInterior("chaumiereA", "Chaumière", {
+      w: 9, h: 7, door: 4, back: { x: 19, y: 6 }, hearth: [1, 1],
+      furniture: [[1, 1, "h"], [6, 4, "b"], [3, 3, "t"], [7, 5, "v"], [2, 4, "u"]],
+      npcs: [{ id: "villager", x: 5, y: 2, name: "Villageois", color: "#6b8f6b", hair: "#3a2a18" }],
+    }),
+    chaumiereB: buildInterior("chaumiereB", "Chaumière", {
+      w: 9, h: 7, door: 4, back: { x: 17, y: 15 }, hearth: [7, 1],
+      furniture: [[7, 1, "h"], [2, 4, "b"], [5, 4, "t"], [1, 1, "k"], [6, 3, "u"]],
+      signs: { "3,1": ["Un lit fait, un feu qui couve.", "Les occupants sont aux champs."] },
+    }),
+    grotte: buildGrotte(),
+  };
   for (const m of Object.values(MAPS)) {
     m.w = m.g[0].length; m.h = m.g.length;
   }
@@ -324,9 +386,11 @@
   function enterMap(id, tx, ty, keepSpawnAsIs) {
     mapId = id;
     map = MAPS[id];
-    player.x = tx * TILE + TILE / 2;
-    player.y = ty * TILE + TILE / 2;
+    player.x = Math.max(TILE, Math.min((map.w - 1.5) * TILE, tx * TILE + TILE / 2));
+    player.y = Math.max(TILE, Math.min((map.h - 1.5) * TILE, ty * TILE + TILE / 2));
     player.kb.x = player.kb.y = 0;
+    player.attack = 0;
+    footDust.length = 0;
     enemies = [];
     for (const e of map.enemies) {
       if (id === "grotte" && e.type === "brute" && world.bruteDefeated) continue;
@@ -556,6 +620,7 @@
       elder: ["Que la route te soit clémente, chevalier."],
       baker: ["Ça sent bon le pain chaud, n'est-ce pas ?"],
       woodcutter: ["*coup de hache* … Tu as besoin de quelque chose ?"],
+      villager: ["Belle matinée, chevalier.", "On dort sur nos deux oreilles depuis que tu veilles."],
     }[id] || ["…"];
   }
 
@@ -730,6 +795,42 @@
     fadeEl.classList.add("on");
     setTimeout(() => { fn(); requestAnimationFrame(() => fadeEl.classList.remove("on")); }, 340);
   }
+
+  // ---- transition « volet iris » pour entrer/sortir d'un lieu fermé (grotte, maison, échoppe)
+  let trans = null;                 // { phase:"in"|"out", t, dur, fn, cx, cy }
+  function irisEase(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+  function irisTo(fn) {
+    if (REDUCED || trans) { if (!trans) fn(); return; }
+    trans = { phase: "in", t: 0, dur: 14, fn, cx: px(player.x), cy: py(player.y) };
+  }
+  function updateTransition(dt) {
+    input.mx = input.my = 0; input.attack = input.interact = false; atkHeld = false;
+    trans.t += dt;
+    if (trans.t < trans.dur) return;
+    if (trans.phase === "in") {
+      const fn = trans.fn; trans.fn = null;
+      if (fn) fn();
+      trans.phase = "out"; trans.t = 0;
+      trans.cx = px(player.x); trans.cy = py(player.y);
+    } else {
+      trans = null;
+    }
+  }
+  function drawIris() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const maxR = Math.hypot(VIEW_W, VIEW_H) * 0.62;
+    const k = Math.max(0, Math.min(1, trans.t / trans.dur));
+    const r = Math.max(0, trans.phase === "in" ? maxR * (1 - irisEase(k)) : maxR * irisEase(k));
+    ctx.fillStyle = "#0a0908";
+    ctx.beginPath();
+    ctx.rect(0, 0, VIEW_W, VIEW_H);
+    ctx.arc(trans.cx, trans.cy, r, 0, Math.PI * 2, true);
+    ctx.fill("evenodd");
+    if (r > 1) {
+      ctx.strokeStyle = "rgba(0,0,0,.55)"; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(trans.cx, trans.cy, r + 2.5, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
   function startPlay() {
     titleEl.hidden = true;
     overEl.hidden = true;
@@ -866,6 +967,7 @@
   function update(dt) {
     time += dt;
     if (hurtFx > 0) hurtFx -= dt;
+    if (trans) { updateTransition(dt); return; }
     if (state !== "play") { input.attack = input.interact = false; atkHeld = false; return; }
     keyboardMove();
 
@@ -911,11 +1013,12 @@
     if (player.moving) moveEntity(player, mvx * sp * dt, mvy * sp * dt, 5, 4);
     if (player.iframe > 0) player.iframe--;
 
-    // transitions de carte
+    // transitions de carte : volet iris qui se ferme puis se rouvre
     const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
     for (const tr of map.transitions) {
       if (tr.x === ptx && tr.y === pty) {
-        enterMap(tr.to, tr.tx, tr.ty);
+        const to = tr.to, dx = tr.tx, dy = tr.ty;
+        irisTo(() => enterMap(to, dx, dy));
         return;
       }
     }
@@ -955,6 +1058,9 @@
       } else {
         moveEntity(e, vx * e.speed * dt, vy * e.speed * dt, e.r - 1, e.r - 1);
       }
+      // sur la carte continue, les bêtes ne remontent pas dans le village
+      const nLim = (map.forestY || 0) * TILE;
+      if (nLim && e.y < nLim + e.r) e.y = nLim + e.r;
       if (e.flash > 0) e.flash--;
       if (e.hurtCd > 0) e.hurtCd--;
 
@@ -1158,30 +1264,161 @@
         ctx.fillStyle = "#38343c"; ctx.fillRect(X, Y, T1, TILE - 4);
         ctx.fillStyle = "#4c4850"; ctx.fillRect(X, Y, T1, 2);
         break;
+      case "u": // tapis (teinte textile, jamais rouge sang)
+        ctx.fillStyle = "#4c5460"; roundRectP(X + 0.5, Y + 0.5, TILE, TILE, 3); ctx.fill();
+        ctx.fillStyle = "rgba(224,210,180,.20)";
+        ctx.fillRect(X + 2, Y + 2, TILE - 3, 1.2); ctx.fillRect(X + 2, Y + TILE - 3, TILE - 3, 1.2);
+        ctx.fillStyle = "rgba(200,140,90,.20)"; ctx.fillRect(X + TILE / 2 - 0.6, Y + 2, 1.2, TILE - 4);
+        break;
     }
   }
 
-  function drawHouseTop(sx, sy) {
-    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y, T1 = TILE + 1;
-    ctx.fillStyle = COL.roofDark; ctx.fillRect(X, Y - 2, T1, TILE + 3);
-    ctx.fillStyle = COL.roof; ctx.fillRect(X, Y, T1, TILE - 4);
-    ctx.fillStyle = COL.roofRim; ctx.fillRect(X, Y - 2, T1, 2);
-    ctx.strokeStyle = "rgba(60,30,20,.22)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(X, Y + 8); ctx.lineTo(X + TILE, Y + 8); ctx.stroke();
+  // --------- bâtiment complet (mur crépi + colombages, toit, cheminée qui fume, fenêtres éclairées)
+  const ROOFS = {
+    bakery:   ["#c39a58", "#7a5626", "#eddaa6"],
+    manor:    ["#8a5f7c", "#4a2f45", "#caa9bf"],
+    cottage:  ["#b0704a", "#743b28", "#e0b48a"],
+    cottage2: ["#9a7050", "#5a3826", "#d6b088"],
+    shop:     ["#6f8a6a", "#3e5440", "#b6c9ae"],
+  };
+  function drawBuilding(b) {
+    const X = b.x * TILE - cam.x, Y = b.y * TILE - cam.y;
+    const W = b.w * TILE, H = b.h * TILE;
+    const tall = b.kind === "manor";
+    const roofH = tall ? 21 : 13;
+    const [rMid, rDark, rRim] = ROOFS[b.kind] || ROOFS.cottage;
+
+    castShadow(b.x * TILE + W / 2, b.y * TILE + H + 3, W * 0.52, 8);
+
+    // --- corps
+    ctx.fillStyle = "#5f4a37";
+    roundRectP(X, Y + roofH - 7, W, H - roofH + 8, 3); ctx.fill();
+    ctx.fillStyle = lgV(X, Y + roofH, Y + H, "#d0c3a8", "#a4917a");
+    roundRectP(X + 1.5, Y + roofH - 5, W - 3, H - roofH + 4, 2); ctx.fill();
+    // colombages
+    ctx.strokeStyle = "rgba(58,40,26,.45)"; ctx.lineWidth = 1.5;
+    for (let i = 1; i < b.w; i++) { ctx.beginPath(); ctx.moveTo(X + i * TILE, Y + roofH - 3); ctx.lineTo(X + i * TILE, Y + H - 1); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(X + 2, Y + H - TILE + 1); ctx.lineTo(X + W - 2, Y + H - TILE + 1); ctx.stroke();
+
+    // --- fenêtres éclairées à l'aube
+    const glow = 0.42 + 0.18 * Math.sin(time * 0.05 + b.x);
+    const cols = b.w >= 4 ? [0.55, b.w - 1.55] : [b.w / 2 - 0.5];
+    for (const wc of cols) {
+      const fx = X + wc * TILE + 3, fy = Y + roofH + 3;
+      ctx.save(); ctx.globalCompositeOperation = "screen";
+      const gg = ctx.createRadialGradient(fx + 4, fy + 4, 0, fx + 4, fy + 4, 13);
+      gg.addColorStop(0, "rgba(255,196,110," + glow + ")"); gg.addColorStop(1, "rgba(255,196,110,0)");
+      ctx.fillStyle = gg; ctx.fillRect(fx - 7, fy - 7, 22, 22); ctx.restore();
+      ctx.fillStyle = "#2f2114"; roundRectP(fx - 1, fy - 1, 10, 11, 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,214,150,.92)"; roundRectP(fx, fy, 8, 9, 1.5); ctx.fill();
+      ctx.strokeStyle = "rgba(40,28,16,.7)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(fx + 4, fy); ctx.lineTo(fx + 4, fy + 9); ctx.moveTo(fx, fy + 4.5); ctx.lineTo(fx + 8, fy + 4.5); ctx.stroke();
+    }
+
+    // --- porte
+    const dxp = X + (b.door.x - b.x) * TILE, dyp = Y + H - TILE - 1;
+    ctx.fillStyle = "#3a2616";
+    ctx.beginPath();
+    ctx.moveTo(dxp + 3, dyp + TILE + 1); ctx.lineTo(dxp + 3, dyp + 5);
+    ctx.arc(dxp + 8, dyp + 5, 5, Math.PI, 0); ctx.lineTo(dxp + 13, dyp + TILE + 1); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#5a3f26"; ctx.lineWidth = 1.4;
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(dxp + 4, dyp + 4 + i * 4); ctx.lineTo(dxp + 12, dyp + 4 + i * 4); ctx.stroke(); }
+    ctx.fillStyle = "#e8c878"; ctx.beginPath(); ctx.arc(dxp + 11, dyp + 9, 0.9, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(150,140,120,.5)"; roundRectP(dxp + 1, dyp + TILE, 14, 3, 1); ctx.fill();
+
+    // --- toit
+    if (tall) {
+      ctx.fillStyle = rDark;
+      ctx.beginPath(); ctx.moveTo(X - 5, Y + roofH); ctx.lineTo(X + W / 2, Y - 7); ctx.lineTo(X + W + 5, Y + roofH); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = lgV(X, Y - 4, Y + roofH, rRim, rMid);
+      ctx.beginPath(); ctx.moveTo(X - 2, Y + roofH - 2); ctx.lineTo(X + W / 2, Y - 3); ctx.lineTo(X + W + 2, Y + roofH - 2); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillStyle = rDark; roundRectP(X - 4, Y - 3, W + 8, roofH + 3, 3); ctx.fill();
+      ctx.fillStyle = lgV(X, Y - 3, Y + roofH, rRim, rMid); roundRectP(X - 3, Y - 2, W + 6, roofH, 3); ctx.fill();
+    }
+    ctx.fillStyle = rRim; ctx.fillRect(X - 3, Y - (tall ? 3 : 2), W + 6, 1.6);
+    ctx.strokeStyle = "rgba(40,24,16,.16)"; ctx.lineWidth = 1;
+    for (let r = 5; r < roofH; r += 4.5) { ctx.beginPath(); ctx.moveTo(X - 2, Y + r); ctx.lineTo(X + W + 2, Y + r); ctx.stroke(); }
+
+    // --- cheminée + fumée
+    const chx = X + W - 11, chy = Y + (tall ? 1 : -3);
+    ctx.fillStyle = "#544435"; ctx.fillRect(chx, chy, 6, 11);
+    ctx.fillStyle = "#6a5848"; ctx.fillRect(chx, chy, 6, 2);
+    ctx.save(); ctx.globalCompositeOperation = "screen";
+    for (let i = 0; i < 4; i++) {
+      const t2 = (time * 0.4 + i * 22) % 88;
+      const sy = chy - t2 * 0.55, sxx = chx + 3 + Math.sin((t2 + i * 30) * 0.06) * 5;
+      const a = Math.max(0, 0.15 * (1 - t2 / 88));
+      ctx.fillStyle = "rgba(224,218,208," + a + ")";
+      ctx.beginPath(); ctx.arc(sxx, sy, 2.4 + t2 * 0.06, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+
+    // --- enseigne bois pour l'échoppe / la boulangerie
+    if (b.kind === "shop" || b.kind === "bakery") {
+      const sgx = dxp + 21, sgy = dyp - 3;
+      ctx.strokeStyle = "#3a2a18"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(sgx, dyp - 9); ctx.lineTo(sgx, sgy + 9); ctx.stroke();
+      ctx.fillStyle = lgV(sgx, sgy, sgy + 9, "#8a6a3e", "#5c3c22");
+      roundRectP(sgx - 10, sgy, 10, 9, 1.5); ctx.fill();
+      ctx.fillStyle = b.kind === "shop" ? "#e0b34a" : "#ecd6a2";
+      ctx.font = "700 6px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(b.kind === "shop" ? "$" : "P", sgx - 5, sgy + 5);
+      ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+    }
   }
-  function drawHouseBody(sx, sy, isDoor) {
-    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y, T1 = TILE + 1;
-    ctx.fillStyle = COL.woodDark; ctx.fillRect(X, Y, T1, T1);
-    ctx.fillStyle = COL.wood; ctx.fillRect(X, Y, TILE - 3, TILE - 2);
-    ctx.fillStyle = "#8a6a44"; ctx.fillRect(X, Y, TILE - 3, 3);
-    ctx.strokeStyle = "rgba(30,20,12,.3)"; ctx.lineWidth = 1;
-    ctx.strokeRect(X + 0.5, Y + 0.5, TILE - 1, TILE - 1);
-    if (isDoor) {
-      ctx.fillStyle = "#241a10";
-      ctx.beginPath();
-      ctx.moveTo(X + 4, Y + TILE); ctx.lineTo(X + 4, Y + 5);
-      ctx.arc(X + 8, Y + 5, 4, Math.PI, 0); ctx.lineTo(X + 12, Y + TILE); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "rgba(255,220,150,.35)"; ctx.fillRect(X + 5, Y + 5, 1, TILE - 5);
+
+  function drawTable(sx, sy) {
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y;
+    castShadow(sx * TILE + 8, sy * TILE + 13, 9, 4);
+    ctx.fillStyle = "#3a2a18"; ctx.fillRect(X + 2, Y + 9, 2, 6); ctx.fillRect(X + TILE - 4, Y + 9, 2, 6);
+    ctx.fillStyle = lgV(X, Y + 3, Y + 11, "#8a6a3e", "#5c3c22");
+    roundRectP(X + 1, Y + 3, TILE - 2, 7, 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,224,170,.16)"; ctx.fillRect(X + 1, Y + 3, TILE - 2, 2);
+  }
+  function drawBed(sx, sy) {
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y;
+    castShadow(sx * TILE + 8, sy * TILE + 14, 9, 4);
+    ctx.fillStyle = "#4a3722"; ctx.fillRect(X + 2, Y + TILE - 3, 2, 3); ctx.fillRect(X + TILE - 4, Y + TILE - 3, 2, 3);
+    ctx.fillStyle = "#5a4126"; roundRectP(X + 1, Y + 2, TILE - 2, TILE - 4, 2); ctx.fill();
+    ctx.fillStyle = "#f2ead6"; roundRectP(X + 2.5, Y + 3, TILE - 6, 4, 1.5); ctx.fill();          // oreiller
+    ctx.fillStyle = "#7c3d38"; roundRectP(X + 1.5, Y + 8, TILE - 3, TILE - 11, 2); ctx.fill();     // couverture
+  }
+  function drawShelf(sx, sy) {
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y;
+    ctx.fillStyle = "#4a3722"; ctx.fillRect(X + 1, Y - 1, TILE - 2, TILE + 1);
+    ctx.fillStyle = "#5f4529"; ctx.fillRect(X + 1, Y - 1, TILE - 2, 1.5);
+    const pal = ["#7c3d38", "#3c5a7a", "#5e7a3e", "#8a6a3e"];
+    for (let r = 0; r < 3; r++) {
+      const ry = Y + 3 + r * 4;
+      ctx.fillStyle = "#2e2013"; ctx.fillRect(X + 1, ry, TILE - 2, 1);
+      for (let i = 0; i < 4; i++) { ctx.fillStyle = pal[(r + i) & 3]; ctx.fillRect(X + 2 + i * 3, ry - 2.6, 2.2, 2.6); }
+    }
+  }
+  function drawBarrel(sx, sy) {
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y;
+    castShadow(sx * TILE + 8, sy * TILE + 13, 7, 3);
+    ctx.fillStyle = lgH(X + 3, X + TILE - 3, Y, "#8a6a3e", "#5c3c22");
+    roundRectP(X + 3, Y + 2, TILE - 6, TILE - 3, 3); ctx.fill();
+    ctx.strokeStyle = "rgba(40,28,16,.6)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(X + 3, Y + 6); ctx.lineTo(X + TILE - 3, Y + 6); ctx.moveTo(X + 3, Y + 11); ctx.lineTo(X + TILE - 3, Y + 11); ctx.stroke();
+    ctx.fillStyle = "rgba(255,224,170,.14)"; ctx.fillRect(X + 4.5, Y + 2, 2, TILE - 3);
+  }
+  function drawHearth(sx, sy) {
+    const X = sx * TILE - cam.x, Y = sy * TILE - cam.y;
+    ctx.fillStyle = COL.stoneDark; roundRectP(X, Y, TILE, TILE, 2); ctx.fill();
+    ctx.fillStyle = COL.stone; ctx.fillRect(X + 1, Y + 1, TILE - 2, 3);
+    ctx.fillStyle = "#160f08"; roundRectP(X + 3, Y + 4, TILE - 6, TILE - 5, 2); ctx.fill();
+    ctx.save(); ctx.globalCompositeOperation = "screen";
+    const fl = 0.65 + 0.3 * Math.sin(time * 0.3 + sx);
+    const g = ctx.createRadialGradient(X + 8, Y + 10, 0, X + 8, Y + 10, 11);
+    g.addColorStop(0, "rgba(255,182,92," + fl + ")"); g.addColorStop(0.5, "rgba(255,120,50,.3)"); g.addColorStop(1, "rgba(255,120,50,0)");
+    ctx.fillStyle = g; ctx.fillRect(X - 5, Y - 5, TILE + 10, TILE + 10);
+    ctx.restore();
+    ctx.fillStyle = "#ffb347";
+    for (let i = 0; i < 3; i++) {
+      const fx = X + 5 + i * 3, h = 4 + Math.sin(time * 0.4 + i * 2) * 2 + (i % 2) * 2;
+      ctx.beginPath(); ctx.moveTo(fx, Y + 13); ctx.quadraticCurveTo(fx + 1, Y + 13 - h, fx + 2, Y + 13); ctx.fill();
     }
   }
 
@@ -1573,10 +1810,24 @@
     }
   }
 
+  // fondu d'ambiance selon la position : village doré au nord -> forêt fraîche au sud
+  function ambiance() {
+    if (mapId === "grotte") return ZONE.grotte;
+    if (map.interior) return ZONE.interieur;
+    const fy = (map.forestY || 21) * TILE;
+    const f = Math.max(0, Math.min(1, (player.y - fy + 70) / 150));
+    const a = AMB.village, b = AMB.foret;
+    const m = a.map((v, i) => v + (b[i] - v) * f);
+    return {
+      tint: "rgba(" + (m[0] | 0) + "," + (m[1] | 0) + "," + (m[2] | 0) + "," + m[3].toFixed(3) + ")",
+      vig: 0.30 + 0.06 * f, shafts: true,
+    };
+  }
+
   function render() {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    const Z = ZONE[mapId] || ZONE.village;
-    ctx.fillStyle = map.floor ? "#191410" : "#20281a";
+    const Z = ambiance();
+    ctx.fillStyle = map.interior ? "#211812" : map.floor ? "#191410" : "#20281a";
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
     const x0 = Math.max(0, Math.floor(cam.x / TILE));
@@ -1587,7 +1838,7 @@
     for (let y = y0; y <= y1; y++)
       for (let x = x0; x <= x1; x++) {
         const c = map.g[y][x];
-        if (c !== "H" && c !== "R") drawTile(c, x, y);
+        if (c !== "H" && c !== "R") drawTile(c, x, y);   // corps de bâtiment : dessiné à part
       }
 
     const list = [];
@@ -1596,15 +1847,22 @@
         const c = map.g[y][x];
         const baseY = y * TILE + TILE;
         if (c === "T") list.push({ y: baseY - 6, d: () => drawTree(x, y) });
-        else if (c === "R") list.push({ y: y * TILE + 2, d: () => drawHouseTop(x, y) });
-        else if (c === "H" || c === "D") list.push({ y: baseY, d: () => drawHouseBody(x, y, c === "D") });
         else if (c === "S") list.push({ y: baseY, d: () => drawSign(x, y) });
         else if (c === "o") {
           const topLeft = map.g[y][x - 1] !== "o" && (!map.g[y - 1] || map.g[y - 1][x] !== "o");
           if (topLeft) list.push({ y: baseY + TILE, d: () => drawWell(x, y) });
         }
         else if (c === "C") list.push({ y: baseY, d: () => drawChest(x, y) });
+        else if (c === "t") list.push({ y: baseY, d: () => drawTable(x, y) });
+        else if (c === "b") list.push({ y: baseY, d: () => drawBed(x, y) });
+        else if (c === "k") list.push({ y: baseY - 2, d: () => drawShelf(x, y) });
+        else if (c === "v") list.push({ y: baseY, d: () => drawBarrel(x, y) });
+        else if (c === "h") list.push({ y: y * TILE + 5, d: () => drawHearth(x, y) });
       }
+    if (map.buildings) for (const b of map.buildings) {
+      if ((b.x + b.w) * TILE < cam.x - 8 || b.x * TILE > cam.x + VIEW_W + 8) continue;
+      list.push({ y: (b.y + b.h) * TILE, d: () => drawBuilding(b) });
+    }
     for (const n of map.npcs) list.push({ y: n.y * TILE + TILE, d: () => drawNpc(n) });
     for (const e of enemies) if (!e.dead) list.push({ y: e.y, d: () => drawEnemy(e) });
     for (const p of pickups) list.push({ y: p.y, d: () => drawPickup(p) });
@@ -1618,6 +1876,13 @@
       const gx = px(player.x), gy = py(player.y);
       const g = ctx.createRadialGradient(gx, gy, 6, gx, gy, 95);
       g.addColorStop(0, "rgba(255,170,90,.4)"); g.addColorStop(0.5, "rgba(255,150,80,.14)"); g.addColorStop(1, "rgba(255,150,80,0)");
+      ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.fillStyle = g; ctx.fillRect(0, 0, VIEW_W, VIEW_H); ctx.restore();
+    }
+    if (Z.hearth && map.hearthPos && state !== "title") {
+      const hx2 = (map.hearthPos[0] + 0.5) * TILE - cam.x, hy2 = (map.hearthPos[1] + 0.8) * TILE - cam.y;
+      const fl = 0.30 + 0.05 * Math.sin(time * 0.13);
+      const g = ctx.createRadialGradient(hx2, hy2, 6, hx2, hy2, 165);
+      g.addColorStop(0, "rgba(255,168,88," + fl + ")"); g.addColorStop(0.5, "rgba(255,150,80,.09)"); g.addColorStop(1, "rgba(255,150,80,0)");
       ctx.save(); ctx.globalCompositeOperation = "screen"; ctx.fillStyle = g; ctx.fillRect(0, 0, VIEW_W, VIEW_H); ctx.restore();
     }
     if (Z.shafts) {
@@ -1769,6 +2034,7 @@
     update(dt);
     if (state === "title") renderTitle();
     else render();
+    if (trans) drawIris();
     requestAnimationFrame(frame);
   }
 
