@@ -96,11 +96,11 @@
 
     // bâtiments visitables : corps solide + une porte (case "=") qui déclenche l'entrée
     const buildings = [
-      { x: 6, y: 2, w: 4, h: 4, kind: "bakery", door: { x: 7, y: 5 }, to: "boulangerie" },
-      { x: 12, y: 1, w: 5, h: 5, kind: "manor", door: { x: 14, y: 5 }, to: "manoir" },
-      { x: 18, y: 2, w: 4, h: 4, kind: "cottage", door: { x: 19, y: 5 }, to: "chaumiereA" },
-      { x: 6, y: 11, w: 4, h: 4, kind: "shop", door: { x: 7, y: 14 }, to: "echoppe" },
-      { x: 16, y: 11, w: 4, h: 4, kind: "cottage2", door: { x: 17, y: 14 }, to: "chaumiereB" },
+      { x: 6, y: 2, w: 4, h: 4, kind: "bakery", door: { x: 7, y: 5 }, to: "boulangerie", name: "Boulangerie" },
+      { x: 12, y: 1, w: 5, h: 5, kind: "manor", door: { x: 14, y: 5 }, to: "manoir", name: "Demeure de l'Ancien" },
+      { x: 18, y: 2, w: 4, h: 4, kind: "cottage", door: { x: 19, y: 5 }, to: "chaumiereA", name: "Chaumière" },
+      { x: 6, y: 11, w: 4, h: 4, kind: "shop", door: { x: 7, y: 14 }, to: "echoppe", name: "Échoppe" },
+      { x: 16, y: 11, w: 4, h: 4, kind: "cottage2", door: { x: 17, y: 14 }, to: "chaumiereB", name: "Chaumière" },
     ];
 
     // -------- sentiers du village (tracés d'abord, les murs passeront par-dessus)
@@ -145,6 +145,8 @@
 
     return {
       id: "village", g, name: "Village de Bonrepos", forestY, buildings,
+      // étiquettes de proximité pour les entrées qui ne sont pas des bâtiments
+      portals: [{ x: 12, y: 41.5, name: "Grotte" }],
       spawn: { x: 11, y: 13 },
       transitions: [
         { x: 7, y: 5, to: "boulangerie", tx: 5, ty: 6 },
@@ -814,6 +816,7 @@
       trans.cx = px(player.x); trans.cy = py(player.y);
     } else {
       trans = null;
+      refreshStick();   // le doigt encore posé : on reprend le déplacement sans le re-bouger
     }
   }
   function drawIris() {
@@ -858,17 +861,22 @@
 
   // ---------------------------------------------------------------- entrées
   // joystick
-  let stickId = null, stickBase = { x: 0, y: 0 };
+  let stickId = null, stickBase = { x: 0, y: 0 }, stickLast = null;
   const stickEl = document.getElementById("stick");
   const knobEl = document.getElementById("knob");
   function stickStart(id, x, y) {
     stickId = id;
     stickBase = { x, y };
+    stickLast = { x, y };
     stickEl.style.left = x - 59 + "px";
     stickEl.style.top = y - 59 + "px";
     stickEl.classList.add("on");
   }
+  // ré-applique la dernière position du doigt (après un changement de carte, le
+  // déplacement reprend sans qu'on ait à re-bouger le pouce)
+  function refreshStick() { if (stickId !== null && stickLast) stickMove(stickLast.x, stickLast.y); }
   function stickMove(x, y) {
+    stickLast = { x, y };
     let dx = x - stickBase.x, dy = y - stickBase.y;
     const len = Math.hypot(dx, dy) || 1;
     const R = 46;
@@ -884,6 +892,7 @@
   }
   function stickEnd() {
     stickId = null;
+    stickLast = null;
     input.mx = 0; input.my = 0;
     knobEl.style.transform = "translate(0,0)";
     stickEl.classList.remove("on");
@@ -891,6 +900,10 @@
   cv.addEventListener("touchstart", (e) => {
     if (state !== "play") return;
     const w = window.innerWidth;
+    // le doigt qui tenait le joystick n'est plus sur l'écran ? (touchend parfois
+    // manqué sur iOS après un changement de pièce) -> on libère pour qu'un nouvel
+    // appui reprenne la main tout de suite
+    if (stickId !== null && !Array.prototype.some.call(e.touches, (t) => t.identifier === stickId)) stickEnd();
     for (const t of e.changedTouches) {
       // le joystick ne naît que du côté marche (gauche, ou droite en mode gaucher)
       const inZone = leftHanded ? t.clientX > w * 0.4 : t.clientX < w * 0.6;
@@ -1915,6 +1928,36 @@
     ctx.save(); ctx.globalAlpha = 0.045; ctx.globalCompositeOperation = "overlay";
     for (let gy = 0; gy < VIEW_H; gy += 96) for (let gx = 0; gx < VIEW_W; gx += 96) ctx.drawImage(grainCv, gx, gy);
     ctx.restore();
+
+    // ---- étiquette du lieu quand on s'approche d'une entrée
+    if (state === "play" || state === "dialogue") {
+      const spots = [];
+      for (const b of (map.buildings || [])) spots.push({ dx: b.door.x + 0.5, dy: b.door.y + 0.5, tx: b.door.x + 0.5, ty: b.door.y - 1.4, name: b.name });
+      for (const p of (map.portals || [])) spots.push({ dx: p.x, dy: p.y, tx: p.x, ty: p.y - 1.6, name: p.name });
+      for (const s of spots) {
+        const dd = Math.hypot(player.x - s.dx * TILE, player.y - s.dy * TILE);
+        if (dd > 54) continue;
+        const a = Math.max(0, Math.min(1, (54 - dd) / 20));
+        drawPlaque(s.tx * TILE - cam.x, Math.max(10, s.ty * TILE - cam.y), s.name, a);
+      }
+    }
+  }
+
+  function drawPlaque(cx, cy, text, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = "600 8px ui-rounded, system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const w = ctx.measureText(text).width + 12, h = 13, x = cx - w / 2, y = cy - h;
+    ctx.fillStyle = "rgba(0,0,0,.3)"; roundRectP(x + 1, y + 2, w, h, 3); ctx.fill();
+    ctx.fillStyle = "#2c2013"; roundRectP(x, y, w, h, 3); ctx.fill();
+    ctx.fillStyle = "#7a5a38"; roundRectP(x + 1, y + 1, w - 2, h - 2, 2.5); ctx.fill();
+    ctx.fillStyle = "rgba(255,226,172,.14)"; ctx.fillRect(x + 2, y + 1.5, w - 4, 2);
+    ctx.fillStyle = "#f4e4c2"; ctx.fillText(text, cx, y + h / 2 + 0.5);
+    ctx.fillStyle = "#2c2013";
+    ctx.beginPath(); ctx.moveTo(cx - 2.5, y + h - 0.5); ctx.lineTo(cx + 2.5, y + h - 0.5); ctx.lineTo(cx, y + h + 3); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
 
   // ---------------------------------------------------------------- scène de l'écran-titre
