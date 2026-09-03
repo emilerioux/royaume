@@ -32,8 +32,15 @@ python3 -m http.server 8000
 
 ## Régénérer les icônes
 
+L'icône (« L'épée dans la pierre ») est dessinée en vectoriel dans
+[`icon-render.html`](icon-render.html). Pour refaire les PNG :
+
 ```bash
-node gen-icons.js
+python3 -m http.server 8000
+# ouvrir http://localhost:8000/icon-render.html?size=512
+# clic droit sur le canvas de gauche -> Enregistrer l'image sous icons/icon-512.png
+sips -Z 192 icons/icon-512.png --out icons/icon-192.png
+sips -Z 180 icons/icon-512.png --out icons/icon-180.png
 ```
 
 ## Idées pour la suite (Phase 2+)
